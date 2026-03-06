@@ -1,2 +1,34 @@
+# Manim output files
 *.mp4
+*.mov
 *.svg
+*.png
+*.gif
+*.webm
+*.tex
+
+# Manim media directory
+**/media/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Text/log files
+*.log
+*.txt
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Manim config (if local)
+manim.cfg
