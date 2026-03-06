@@ -240,15 +240,21 @@ class DataCirclesFigure(MovingCameraScene):
         # ============================================================
         # FADE OUT - for looping
         # ============================================================
-        # Fade out all circles, labels, and lines
+        # Fade out all while zooming back to initial scale and Y position (keep X position)
+        # Fade takes 2 seconds, camera motion takes 4 seconds, both start together
+        current_camera_x = self.camera.frame.get_center()[0]
+        initial_camera_y = baseline_y + initial_frame_height * camera_y_offset
+        
         self.play(
-            *[FadeOut(c) for c in circles],
-            FadeOut(label_0), FadeOut(label_1), FadeOut(label_2), FadeOut(label_3),
-            FadeOut(line_0), FadeOut(line_1), FadeOut(line_2), FadeOut(line_3),
-            run_time=1.5
+            *[FadeOut(c, run_time=2) for c in circles],
+            FadeOut(label_0, run_time=2), FadeOut(label_1, run_time=2), 
+            FadeOut(label_2, run_time=2), FadeOut(label_3, run_time=2),
+            FadeOut(line_0, run_time=2), FadeOut(line_1, run_time=2), 
+            FadeOut(line_2, run_time=2), FadeOut(line_3, run_time=2),
+            self.camera.frame.animate(run_time=4).set_height(initial_frame_height).move_to([current_camera_x, initial_camera_y, 0]),
         )
         
-        # Wait with just baseline visible
+        # Wait with just baseline visible (ready to loop)
         self.wait(2)
 
 
