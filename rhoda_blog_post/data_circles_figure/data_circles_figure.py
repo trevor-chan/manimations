@@ -119,8 +119,8 @@ class DataCirclesFigure(MovingCameraScene):
             # Scale label to be readable at current zoom
             label_scale = camera_height / 8  # Normalize to default camera height
             
-            # Position label above the circle
-            label_offset = camera_height * 0.35
+            # Position label above the circle (50% closer)
+            label_offset = camera_height * 0.20
             label.scale(label_scale)
             label.move_to([circle.get_center()[0], circle.get_top()[1] + label_offset, 0])
             
@@ -152,7 +152,7 @@ class DataCirclesFigure(MovingCameraScene):
         
         # Initial camera setup: zoom in on OXE
         # Camera frame height should show OXE circle filling a good portion
-        initial_frame_height = radii[0] * 6  # OXE appears large
+        initial_frame_height = radii[0] * 4.5  # OXE appears large (25% more zoomed in)
         
         # Position camera so baseline is near BOTTOM of frame (with room for labels below)
         # Camera Y = baseline + offset puts baseline in lower portion with label space below
@@ -245,7 +245,7 @@ class DataCirclesFigure(MovingCameraScene):
             Create(line_3),
             run_time=1.5
         )
-        self.wait(2)
+        self.wait(4)
         
         # ============================================================
         # FADE OUT - for looping
