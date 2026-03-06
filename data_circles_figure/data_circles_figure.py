@@ -7,6 +7,16 @@ Uses camera panning/zooming to reveal each circle at the same apparent size.
 
 from manim import *
 import math
+from matplotlib import font_manager
+
+def get_preferred_font():
+    """Return 'Open Sans' if available, otherwise 'Arial'."""
+    available_fonts = {f.name for f in font_manager.fontManager.ttflist}
+    if "Open Sans" in available_fonts:
+        print("Using Open Sans")
+        return "Open Sans"
+    print("Using Arial")
+    return "Arial"
 
 # Configure 2:1 aspect ratio
 config.pixel_width = 1920
@@ -22,7 +32,7 @@ class DataCirclesFigure(MovingCameraScene):
             ("OXE", 4000),
             (r"\pi_0", 10000),
             ("GEN-0", 270000),
-            ("Rhoda", 10),
+            ("Rhoda", 100),
         ]
 
         # Calculate radii proportional to sqrt(hours) for area scaling
@@ -48,12 +58,12 @@ class DataCirclesFigure(MovingCameraScene):
                 hours_str = f"~{hours} HRS"
             
             # Use sans-serif font for all text
-            sans_font = "Arial"
+            sans_font = get_preferred_font()
             if name == r"\pi_0":
                 # Use Text with Unicode pi for consistent sans-serif styling
-                name_label = Text("π₀", font=sans_font, font_size=36)
+                name_label = Text("π₀", font=sans_font, font_size=36, weight=SEMIBOLD)
             else:
-                name_label = Text(name, font=sans_font, font_size=28)
+                name_label = Text(name, font=sans_font, font_size=28, weight=SEMIBOLD)
             
             hours_label = Text(hours_str, font=sans_font, font_size=20)
             
@@ -70,7 +80,7 @@ class DataCirclesFigure(MovingCameraScene):
         x_positions = []
         
         # Gap multipliers for each transition (smaller = tighter, negative = overlap)
-        gap_multipliers = [0.8, 0.1, -0.65]  # OXE→pi_0, pi_0→GEN-0, GEN-0→Rhoda (significant overlap!)
+        gap_multipliers = [0.8, 0.1, -0.35]  # OXE→pi_0, pi_0→GEN-0, GEN-0→Rhoda (significant overlap!)
         
         for i, radius in enumerate(radii):
             if i == 0:
@@ -267,7 +277,7 @@ class DataCirclesFigureStatic(Scene):
             ("OXE", 4000),
             (r"\pi_0", 10000),
             ("GEN-0", 270000),
-            ("Rhoda", 10),
+            ("Rhoda", 100),
         ]
 
         scale_factor = 0.012
@@ -290,7 +300,7 @@ class DataCirclesFigureStatic(Scene):
                 hours_str = f"~{hours} HRS"
             
             # Use sans-serif font for all text
-            sans_font = "Arial"
+            sans_font = get_preferred_font()
             if name == r"\pi_0":
                 name_label = Text("π₀", font=sans_font, font_size=36)
             else:
