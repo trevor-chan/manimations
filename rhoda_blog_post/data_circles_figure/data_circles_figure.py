@@ -32,7 +32,7 @@ class DataCirclesFigure(MovingCameraScene):
             ("OXE", 4000),
             (r"\pi_0", 10000),
             ("GEN-0", 270000),
-            ("Rhoda", 100),
+            ("Rhoda", 20),
         ]
 
         # Calculate radii proportional to sqrt(hours) for area scaling
@@ -80,7 +80,7 @@ class DataCirclesFigure(MovingCameraScene):
         x_positions = []
         
         # Gap multipliers for each transition (smaller = tighter, negative = overlap)
-        gap_multipliers = [0.8, 0.1, -0.35]  # OXE→pi_0, pi_0→GEN-0, GEN-0→Rhoda (significant overlap!)
+        gap_multipliers = [0.8, 0.1, -0.45]  # OXE→pi_0, pi_0→GEN-0, GEN-0→Rhoda (significant overlap!)
         
         for i, radius in enumerate(radii):
             if i == 0:
