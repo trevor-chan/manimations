@@ -1,0 +1,132 @@
+# Manim Community Edition Best Practices
+
+Trigger when: (1) User mentions "manim" or "Manim Community" or "ManimCE", (2) Code contains `from manim import *`, (3) User runs `manim` CLI commands, (4) Working with Scene, MathTex, Create(), or ManimCE-specific classes.
+
+This project uses **Manim Community Edition** - the community-maintained Python animation engine. NOT ManimGL/3b1b version (which uses `manimlib` imports and `manimgl` CLI).
+
+## Detailed Rule Files
+
+For in-depth guidance, read the rule files in `manimce-best-practices/rules/`:
+
+### Core Concepts
+- `rules/scenes.md` - Scene structure, construct method, and scene types
+- `rules/mobjects.md` - Mobject types, VMobject, Groups, and positioning
+- `rules/animations.md` - Animation classes, playing animations, and timing
+
+### Creation & Transformation
+- `rules/creation-animations.md` - Create, Write, FadeIn, DrawBorderThenFill
+- `rules/transform-animations.md` - Transform, ReplacementTransform, morphing
+- `rules/animation-groups.md` - AnimationGroup, LaggedStart, Succession
+
+### Text & Math
+- `rules/text.md` - Text mobjects, fonts, and styling
+- `rules/latex.md` - MathTex, Tex, LaTeX rendering, and coloring formulas
+- `rules/text-animations.md` - Write, AddTextLetterByLetter, TypeWithCursor
+
+### Styling & Appearance
+- `rules/colors.md` - Color constants, gradients, and color manipulation
+- `rules/styling.md` - Fill, stroke, opacity, and visual properties
+
+### Positioning & Layout
+- `rules/positioning.md` - move_to, next_to, align_to, shift methods
+- `rules/grouping.md` - VGroup, Group, arrange, and layout patterns
+
+### Coordinate Systems & Graphing
+- `rules/axes.md` - Axes, NumberPlane, coordinate systems
+- `rules/graphing.md` - Plotting functions, parametric curves
+- `rules/3d.md` - ThreeDScene, 3D axes, surfaces, camera orientation
+
+### Animation Control
+- `rules/timing.md` - Rate functions, easing, run_time, lag_ratio
+- `rules/updaters.md` - Updaters, ValueTracker, dynamic animations
+- `rules/camera.md` - MovingCameraScene, zoom, pan, frame manipulation
+
+### Configuration & CLI
+- `rules/cli.md` - Command-line interface, rendering options, quality flags
+- `rules/config.md` - Configuration system, manim.cfg, settings
+
+### Shapes & Geometry
+- `rules/shapes.md` - Circle, Square, Rectangle, Polygon, and geometric primitives
+- `rules/lines.md` - Line, Arrow, Vector, DashedLine, and connectors
+
+## Templates
+
+Copy and modify templates from `manimce-best-practices/templates/`:
+- `templates/basic_scene.py` - Standard 2D scene template
+- `templates/camera_scene.py` - MovingCameraScene with zoom/pan
+- `templates/threed_scene.py` - 3D scene with surfaces and camera rotation
+
+## Working Examples
+
+Reference examples in `manimce-best-practices/examples/`:
+- `examples/basic_animations.py` - Shape creation, text, lagged animations, path movement
+- `examples/math_visualization.py` - LaTeX equations, color-coded math, derivations
+- `examples/updater_patterns.py` - ValueTracker, dynamic animations, physics simulations
+- `examples/graph_plotting.py` - Axes, functions, areas, Riemann sums, polar plots
+- `examples/3d_visualization.py` - ThreeDScene, surfaces, 3D camera, parametric curves
+
+## Quick Reference
+
+### Basic Scene Structure
+```python
+from manim import *
+
+class MyScene(Scene):
+    def construct(self):
+        # Create mobjects
+        circle = Circle()
+        
+        # Add to scene (static)
+        self.add(circle)
+        
+        # Or animate
+        self.play(Create(circle))
+        
+        # Wait
+        self.wait(1)
+```
+
+### The .animate Syntax
+```python
+# Move, scale, and change color in one animation
+self.play(square.animate.shift(RIGHT).rotate(PI/4).set_color(BLUE))
+```
+
+### Render Commands
+```bash
+# Preview low quality (fast, for development)
+manim -pql scene.py MyScene
+
+# Preview high quality
+manim -pqh scene.py MyScene
+
+# Quality flags: -ql (low), -qm (medium), -qh (high), -qk (4k)
+
+# Output as GIF
+manim --format gif scene.py MyScene
+```
+
+### Key Differences from 3b1b/ManimGL
+
+| Feature | Manim Community | 3b1b/ManimGL |
+|---------|-----------------|--------------|
+| Import | `from manim import *` | `from manimlib import *` |
+| CLI | `manim` | `manimgl` |
+| Math text | `MathTex(r"\pi")` | `Tex(R"\pi")` |
+| Scene | `Scene` | `InteractiveScene` |
+| Package | `manim` (PyPI) | `manimgl` (PyPI) |
+
+### Common Pitfalls to Avoid
+
+1. **Version confusion** - Ensure you're using `manim` (Community), not `manimgl` (3b1b version)
+2. **Check imports** - `from manim import *` is ManimCE; `from manimlib import *` is ManimGL
+3. **Outdated tutorials** - Video tutorials may be outdated; prefer official documentation
+4. **manimpango issues** - If text rendering fails, check manimpango installation requirements
+
+### Best Practices
+
+1. **Use .animate for simple transformations** - Cleaner than explicit Animation classes
+2. **Keep run_time reasonable** - 0.5-2 seconds for most animations
+3. **Use rate_func for polish** - `smooth` is usually better than `linear`
+4. **Group related animations** - Play simultaneously when conceptually related
+5. **Read the detailed rule files** - They contain comprehensive examples and patterns
