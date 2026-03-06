@@ -38,7 +38,7 @@ class DataCirclesFigure(MovingCameraScene):
             radii.append(radius)
             circle = Circle(radius=radius)
             circle.set_fill(WHITE, opacity=0.8)
-            circle.set_stroke(WHITE, width=2)
+            circle.set_stroke(WHITE, width=1)  # Border for DrawBorderThenFill (same as baseline)
             circles.append(circle)
             
             # Create label with name and hours
@@ -47,13 +47,15 @@ class DataCirclesFigure(MovingCameraScene):
             else:
                 hours_str = f"~{hours} HRS"
             
-            # Use MathTex for pi_0, Text for others
+            # Use sans-serif font for all text
+            sans_font = "Arial"
             if name == r"\pi_0":
-                name_label = MathTex(name, font_size=36)
+                # Use Text with Unicode pi for consistent sans-serif styling
+                name_label = Text("π₀", font=sans_font, font_size=36)
             else:
-                name_label = Text(name, font_size=28)
+                name_label = Text(name, font=sans_font, font_size=28)
             
-            hours_label = Text(hours_str, font_size=20)
+            hours_label = Text(hours_str, font=sans_font, font_size=20)
             
             label_group = VGroup(name_label, hours_label).arrange(DOWN, buff=0.1)
             labels.append(label_group)
@@ -68,7 +70,7 @@ class DataCirclesFigure(MovingCameraScene):
         x_positions = []
         
         # Gap multipliers for each transition (smaller = tighter, negative = overlap)
-        gap_multipliers = [0.4, 0.1, -0.70]  # OXE→pi_0, pi_0→GEN-0, GEN-0→Rhoda (significant overlap!)
+        gap_multipliers = [0.8, 0.1, -0.65]  # OXE→pi_0, pi_0→GEN-0, GEN-0→Rhoda (significant overlap!)
         
         for i, radius in enumerate(radii):
             if i == 0:
@@ -84,34 +86,52 @@ class DataCirclesFigure(MovingCameraScene):
             circle.move_to([x_pos, baseline_y + circle.radius, 0])
         
         # Create a very long horizontal baseline (to accommodate all zoom levels)
+        # Shift line down to account for both circle stroke and baseline stroke
+        baseline_stroke_width = 1
+        circle_stroke_width = 1
+        # Total offset = half of circle stroke + half of baseline stroke
+        stroke_to_world = lambda px: px / config.pixel_height * config.frame_height
+        baseline_line_offset = stroke_to_world(circle_stroke_width / 2 + baseline_stroke_width / 2)
         baseline = Line(
-            start=[-50, baseline_y, 0],
-            end=[50, baseline_y, 0],
+            start=[-50, baseline_y - baseline_line_offset, 0],
+            end=[50, baseline_y - baseline_line_offset, 0],
             color=WHITE,
-            stroke_width=1
+            stroke_width=baseline_stroke_width
         )
         
-        # Create labels and dashed lines for each circle
-        # These will be created dynamically as we reveal each circle
-        def create_label_and_line(circle, label, camera_height):
-            """Position label and create dashed line based on current camera view."""
+        # Base line weight for OXE (first circle)
+        base_line_weight = 0.5
+        base_radius = radii[0]
+        
+        # Create labels positioned above circles with thin solid line
+        def create_label_and_line(circle, label, camera_height, circle_radius):
+            """Position label above circle with connecting line based on current camera view."""
             # Scale label to be readable at current zoom
             label_scale = camera_height / 8  # Normalize to default camera height
             
-            # Position label above the circle, within camera frame
+            # Position label above the circle
             label_offset = camera_height * 0.35
             label.scale(label_scale)
             label.move_to([circle.get_center()[0], circle.get_top()[1] + label_offset, 0])
             
-            # Create dashed line from label to circle
-            dashed_line = DashedLine(
-                start=[circle.get_center()[0], label.get_bottom()[1] - 0.05 * label_scale, 0],
-                end=[circle.get_center()[0], circle.get_top()[1] + 0.05 * label_scale, 0],
+            # Line weight scales with circle radius (0.5 for base, proportionally larger for bigger circles)
+            # Minimum weight of 0.1 to ensure visibility for tiny circles like Rhoda (doubled)
+            line_weight = max(0.1, base_line_weight * (circle_radius / base_radius)) 
+            # Double the weight for very small circles (Rhoda fix)
+            if circle_radius < base_radius * 0.01:
+                line_weight *= 2
+            
+            # Consistent gap on both ends (near text and near circle)
+            gap = camera_height * 0.02
+            
+            # Create thin solid line from below label to just above circle
+            connector_line = Line(
+                start=[circle.get_center()[0], label.get_bottom()[1] - gap, 0],
+                end=[circle.get_center()[0], circle.get_top()[1] + gap, 0],
                 color=WHITE,
-                stroke_width=1,
-                dash_length=0.1 * label_scale
+                stroke_width=line_weight
             )
-            return label, dashed_line
+            return label, connector_line
 
         # Add baseline (always visible)
         self.add(baseline)
@@ -124,19 +144,19 @@ class DataCirclesFigure(MovingCameraScene):
         # Camera frame height should show OXE circle filling a good portion
         initial_frame_height = radii[0] * 6  # OXE appears large
         
-        # Position camera so baseline is near BOTTOM of frame
-        # Camera Y = baseline + 40% of frame height puts baseline near bottom
+        # Position camera so baseline is near BOTTOM of frame (with room for labels below)
+        # Camera Y = baseline + offset puts baseline in lower portion with label space below
         camera_y_offset = 0.35  # Fraction of frame height above baseline for camera center
         
         self.camera.frame.set_height(initial_frame_height)
         self.camera.frame.move_to([x_positions[0], baseline_y + initial_frame_height * camera_y_offset, 0])
         
         # Show OXE circle
-        label_0, dashed_0 = create_label_and_line(circles[0], labels[0], initial_frame_height)
+        label_0, line_0 = create_label_and_line(circles[0], labels[0], initial_frame_height, radii[0])
         self.play(
-            Create(circles[0]),
+            DrawBorderThenFill(circles[0]),
             FadeIn(label_0),
-            Create(dashed_0),
+            Create(line_0),
             run_time=1.5
         )
         self.wait(1)
@@ -152,16 +172,16 @@ class DataCirclesFigure(MovingCameraScene):
         camera_x_1 = x_positions[1]
         camera_y_1 = baseline_y + frame_height_1 * camera_y_offset
         
-        label_1, dashed_1 = create_label_and_line(circles[1], labels[1], frame_height_1)
+        label_1, line_1 = create_label_and_line(circles[1], labels[1], frame_height_1, radii[1])
         
         self.play(
             self.camera.frame.animate.set_height(frame_height_1).move_to([camera_x_1, camera_y_1, 0]),
             run_time=2
         )
         self.play(
-            Create(circles[1]),
+            DrawBorderThenFill(circles[1]),
             FadeIn(label_1),
-            Create(dashed_1),
+            Create(line_1),
             run_time=1.5
         )
         self.wait(1)
@@ -175,16 +195,16 @@ class DataCirclesFigure(MovingCameraScene):
         camera_x_2 = x_positions[2]
         camera_y_2 = baseline_y + frame_height_2 * camera_y_offset
         
-        label_2, dashed_2 = create_label_and_line(circles[2], labels[2], frame_height_2)
+        label_2, line_2 = create_label_and_line(circles[2], labels[2], frame_height_2, radii[2])
         
         self.play(
             self.camera.frame.animate.set_height(frame_height_2).move_to([camera_x_2, camera_y_2, 0]),
             run_time=2.5
         )
         self.play(
-            Create(circles[2]),
+            DrawBorderThenFill(circles[2]),
             FadeIn(label_2),
-            Create(dashed_2),
+            Create(line_2),
             run_time=1.5
         )
         self.wait(1)
@@ -193,8 +213,8 @@ class DataCirclesFigure(MovingCameraScene):
         # Transition to Rhoda - ZOOM WAY IN
         # ============================================================
         # Rhoda is tiny! Zoom in so Rhoda is visible, but GEN-0 becomes a massive arc
-        # Frame height should make Rhoda appear at reasonable size
-        frame_height_3 = radii[3] * 8  # Zoom in tight on Rhoda
+        # Frame height should make Rhoda appear at reasonable size (half as zoomed)
+        frame_height_3 = radii[3] * 16  # Less tight zoom to show more context
         
         # Position camera centered on Rhoda's actual position
         # Use the circle's actual center (which accounts for negative gap positioning)
@@ -203,18 +223,32 @@ class DataCirclesFigure(MovingCameraScene):
         camera_x_3 = rhoda_actual_center[0] - frame_height_3 * 0.3
         camera_y_3 = baseline_y + frame_height_3 * camera_y_offset
         
-        label_3, dashed_3 = create_label_and_line(circles[3], labels[3], frame_height_3)
+        label_3, line_3 = create_label_and_line(circles[3], labels[3], frame_height_3, radii[3])
         
         self.play(
             self.camera.frame.animate.set_height(frame_height_3).move_to([camera_x_3, camera_y_3, 0]),
             run_time=2.5
         )
         self.play(
-            Create(circles[3]),
+            DrawBorderThenFill(circles[3]),
             FadeIn(label_3),
-            Create(dashed_3),
+            Create(line_3),
             run_time=1.5
         )
+        self.wait(2)
+        
+        # ============================================================
+        # FADE OUT - for looping
+        # ============================================================
+        # Fade out all circles, labels, and lines
+        self.play(
+            *[FadeOut(c) for c in circles],
+            FadeOut(label_0), FadeOut(label_1), FadeOut(label_2), FadeOut(label_3),
+            FadeOut(line_0), FadeOut(line_1), FadeOut(line_2), FadeOut(line_3),
+            run_time=1.5
+        )
+        
+        # Wait with just baseline visible
         self.wait(2)
 
 
@@ -241,7 +275,7 @@ class DataCirclesFigureStatic(Scene):
             radii.append(radius)
             circle = Circle(radius=radius)
             circle.set_fill(WHITE, opacity=0.8)
-            circle.set_stroke(WHITE, width=2)
+            circle.set_stroke(WHITE, width=1)  # Border for DrawBorderThenFill (same as baseline)
             circles.append(circle)
             
             if hours >= 1000:
@@ -249,12 +283,14 @@ class DataCirclesFigureStatic(Scene):
             else:
                 hours_str = f"~{hours} HRS"
             
+            # Use sans-serif font for all text
+            sans_font = "Arial"
             if name == r"\pi_0":
-                name_label = MathTex(name, font_size=36)
+                name_label = Text("π₀", font=sans_font, font_size=36)
             else:
-                name_label = Text(name, font_size=28)
+                name_label = Text(name, font=sans_font, font_size=28)
             
-            hours_label = Text(hours_str, font_size=20)
+            hours_label = Text(hours_str, font=sans_font, font_size=20)
             
             label_group = VGroup(name_label, hours_label).arrange(DOWN, buff=0.1)
             labels.append(label_group)
@@ -276,11 +312,16 @@ class DataCirclesFigureStatic(Scene):
         for circle, x_pos in zip(circles, x_positions):
             circle.move_to([x_pos, baseline_y + circle.radius, 0])
         
+        # Shift line down by half stroke width so circles sit flush on top
+        baseline_stroke_width = 1
+        circle_stroke_width = 1
+        stroke_to_world = lambda px: px / config.pixel_height * config.frame_height
+        baseline_line_offset = stroke_to_world(circle_stroke_width / 2 + baseline_stroke_width / 2)
         baseline = Line(
-            start=[-10, baseline_y, 0],
-            end=[15, baseline_y, 0],
+            start=[-10, baseline_y - baseline_line_offset, 0],
+            end=[15, baseline_y - baseline_line_offset, 0],
             color=WHITE,
-            stroke_width=1
+            stroke_width=baseline_stroke_width
         )
         
         label_y = 3.5
