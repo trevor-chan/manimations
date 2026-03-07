@@ -61,6 +61,7 @@ TEXT_DARK = "#181C22"              # Dark dark gray for text on light bg
 TEXT_LIGHT = "#FFFFFF"             # Perfect white text on dark bg
 TEXT_MUTED = "#6B6B6B"             # Gray for secondary text
 MARKER_GRAY = "#444444"            # Subtle markers/gridlines
+FILL_LIGHT_GRAY = "#E8E8E8"        # Light gray for container fills
 
 # =============================================================================
 # SEMANTIC COLORS (for diagrams)

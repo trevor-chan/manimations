@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from colors import (
     RHODA_ORANGE, RHODA_BLUE, RHODA_BLUE_LIGHT,
-    BG_OFFWHITE, BG_DARK, TEXT_DARK, MARKER_GRAY,
+    BG_OFFWHITE, BG_DARK, TEXT_DARK, MARKER_GRAY, FILL_LIGHT_GRAY,
     VISION_COLOR as _VISION_COLOR, 
     ACTION_COLOR as _ACTION_COLOR,
     TIMEBAR_COLOR as _TIMEBAR_COLOR
@@ -249,6 +249,44 @@ class ModelIndicator(VGroup):
         return self.box.get_width()
 
 
+class ModelContainer(VGroup):
+    """Larger rounded rectangle container that encompasses both video and action models."""
+    
+    def __init__(self, fill_color=FILL_LIGHT_GRAY, **kwargs):
+        super().__init__(**kwargs)
+        
+        # Calculate container dimensions
+        # Spans full chunk width horizontally (hugs left of video model to right of action model)
+        container_width = CHUNK_WIDTH
+        
+        # Spans from top of video model to bottom of action model vertically
+        # No padding - exactly match the model bounds
+        container_height = (VIDEO_MODEL_Y + MODEL_HEIGHT/2) - (ACTION_MODEL_Y - MODEL_HEIGHT/2)
+        
+        # Center Y position
+        container_center_y = (VIDEO_MODEL_Y + ACTION_MODEL_Y) / 2
+        
+        self.box = RoundedRectangle(
+            width=container_width,
+            height=container_height,
+            corner_radius=0.12,  # Match ModelIndicator corner radius
+            stroke_width=2,
+            stroke_color=fill_color,  # Match stroke to fill color
+            fill_color=fill_color,
+            fill_opacity=1.0
+        )
+        self.add(self.box)
+        
+        # Store for positioning
+        self._center_y = container_center_y
+    
+    def get_center_y(self):
+        return self._center_y
+    
+    def get_width(self):
+        return self.box.get_width()
+
+
 # =============================================================================
 # MAIN SCENE
 # =============================================================================
@@ -318,6 +356,11 @@ class InferenceRollout(Scene):
         # Both models fit within one chunk, starting at timebar
         # Layout: |--margin--|--video--|--gap--|--action--|--margin--|
         
+        # Model container (outer box around both models)
+        model_container = ModelContainer()
+        model_container_x = time_to_x(0, current_time) + CHUNK_WIDTH/2
+        model_container.move_to([model_container_x, model_container.get_center_y(), 0])
+        
         # Video Model indicator
         video_model = ModelIndicator(
             width=VIDEO_MODEL_WIDTH,
@@ -337,20 +380,27 @@ class InferenceRollout(Scene):
         action_model.move_to([action_model_x, ACTION_MODEL_Y, 0])
         
         # =====================================================================
-        # ADD ELEMENTS TO SCENE
+        # ADD ELEMENTS TO SCENE WITH FADE IN
         # =====================================================================
         
-        # Add infrastructure first
-        self.add(chunk_markers)
-        self.add(timebar_group)
+        # Group all elements for fade in
+        all_initial_elements = VGroup(
+            chunk_markers,
+            timebar_group,
+            vision_history,
+            model_container,
+            video_model,
+            action_model
+        )
         
-        # Add main elements
-        self.add(vision_history)
-        self.add(video_model)
-        self.add(action_model)
+        # Fade in from white (1 second)
+        self.play(FadeIn(all_initial_elements), run_time=1)
+        
+        # Restore z-index after fade (grouping may affect it)
+        timebar_group.set_z_index(100)
         
         # Hold for viewing keyframe 1
-        self.wait(1)
+        self.wait(0.5)
         
         # =====================================================================
         # KEYFRAME 2: Vision flows into Video Model (no time progression)
@@ -389,7 +439,7 @@ class InferenceRollout(Scene):
         time_tracker = ValueTracker(0)
         
         # Elements that slide left as time progresses (excluding vision_history which grows)
-        sliding_elements = [video_model, action_model, chunk_markers]
+        sliding_elements = [video_model, action_model, model_container, chunk_markers]
         
         # Store initial positions
         initial_positions = {id(mob): mob.get_center()[0] for mob in sliding_elements}
@@ -597,7 +647,7 @@ class InferenceRollout(Scene):
         time_tracker_2 = ValueTracker(0)
         
         # Elements that slide left (excluding vision_history which grows)
-        sliding_elements_2 = [video_model, action_model, chunk_markers, video_prediction]
+        sliding_elements_2 = [video_model, action_model, model_container, chunk_markers, video_prediction]
         
         # Store initial positions
         initial_positions_2 = {id(mob): mob.get_center()[0] for mob in sliding_elements_2}
@@ -786,10 +836,14 @@ class InferenceRollout(Scene):
         
         # --- Instant wipe and remake for non-model objects ---
         
+        # Get model container position before removing
+        phase1_model_container_pos = model_container.get_center()
+        
         # Remove old objects (not models)
         self.remove(vision_history)
         self.remove(video_prediction)
         self.remove(chunk_markers)
+        self.remove(model_container)
         for chip in action_chips:
             self.remove(chip)
         
@@ -869,28 +923,36 @@ class InferenceRollout(Scene):
         initial_fade_gap_chips.append(gap_chip)
         
         # --- Create new models at NEXT chunk position ---
+        loop_model_container = ModelContainer()
+        loop_model_container.move_to([CHUNK_WIDTH / 2, loop_model_container.get_center_y(), 0])
+        loop_model_container.set_opacity(0)  # Start invisible
+        self.add(loop_model_container)
+        
         loop_video_model = ModelIndicator(width=VIDEO_MODEL_WIDTH, color=VISION_COLOR)
         loop_video_model.move_to([VIDEO_MODEL_WIDTH / 2, VIDEO_MODEL_Y, 0])
-        loop_video_model.set_stroke(opacity=0)  # Start invisible
+        loop_video_model.set_opacity(0)  # Start invisible
         self.add(loop_video_model)
         
         loop_action_model = ModelIndicator(width=ACTION_MODEL_WIDTH, color=ACTION_COLOR)
         loop_action_model.move_to([VIDEO_MODEL_WIDTH / 2 + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2, ACTION_MODEL_Y, 0])
-        loop_action_model.set_stroke(opacity=0)  # Start invisible
+        loop_action_model.set_opacity(0)  # Start invisible
         self.add(loop_action_model)
         
-        # Fade out old models, fade in new models simultaneously
+        # Fade out old models and container, fade in new ones simultaneously
         self.play(
-            video_model.animate.set_stroke(opacity=0),
-            action_model.animate.set_stroke(opacity=0),
-            loop_video_model.animate.set_stroke(opacity=1),
-            loop_action_model.animate.set_stroke(opacity=1),
+            video_model.animate.set_opacity(0),
+            action_model.animate.set_opacity(0),
+            model_container.animate.set_opacity(0),
+            loop_video_model.animate.set_opacity(1),
+            loop_action_model.animate.set_opacity(1),
+            loop_model_container.animate.set_opacity(1),
             run_time=0.5
         )
         
-        # Remove old models
+        # Remove old models and container
         self.remove(video_model)
         self.remove(action_model)
+        self.remove(model_container)
         
         for loop_iteration in range(4):  # Run loop 2 times
             
@@ -898,15 +960,19 @@ class InferenceRollout(Scene):
             chunk_time = ValueTracker(0)
             
             # Create new models for the NEXT chunk (will fade in at end of this chunk)
+            new_model_container = ModelContainer()
+            new_model_container.move_to([CHUNK_WIDTH / 2, new_model_container.get_center_y(), 0])
+            new_model_container.set_opacity(0)  # Start invisible
+            
             new_video_model = ModelIndicator(width=VIDEO_MODEL_WIDTH, color=VISION_COLOR)
             new_video_model.move_to([VIDEO_MODEL_WIDTH / 2, VIDEO_MODEL_Y, 0])
-            new_video_model.set_stroke(opacity=0)  # Start invisible
+            new_video_model.set_opacity(0)  # Start invisible
             
             new_action_model = ModelIndicator(width=ACTION_MODEL_WIDTH, color=ACTION_COLOR)
             new_action_model.move_to([VIDEO_MODEL_WIDTH / 2 + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2, ACTION_MODEL_Y, 0])
-            new_action_model.set_stroke(opacity=0)  # Start invisible
+            new_action_model.set_opacity(0)  # Start invisible
             
-            self.add(new_video_model, new_action_model)
+            self.add(new_model_container, new_video_model, new_action_model)
             
             # Model crossfade updaters - current models fade out, new models fade in at END
             model_fade_start_t = 1 - ghost_duration_frac
@@ -917,7 +983,7 @@ class InferenceRollout(Scene):
                     if t < fade_start:
                         return
                     fade_progress = min((t - fade_start) / ghost_duration_frac, 1.0)
-                    mob.set_stroke(opacity=1 - fade_progress)
+                    mob.set_opacity(1 - fade_progress)
                 return updater
             
             def make_model_fade_in(fade_start):
@@ -926,22 +992,25 @@ class InferenceRollout(Scene):
                     if t < fade_start:
                         return
                     fade_progress = min((t - fade_start) / ghost_duration_frac, 1.0)
-                    mob.set_stroke(opacity=fade_progress)
+                    mob.set_opacity(fade_progress)
                 return updater
             
             loop_video_model.add_updater(make_model_fade_out(model_fade_start_t))
             loop_action_model.add_updater(make_model_fade_out(model_fade_start_t))
+            loop_model_container.add_updater(make_model_fade_out(model_fade_start_t))
             new_video_model.add_updater(make_model_fade_in(model_fade_start_t))
             new_action_model.add_updater(make_model_fade_in(model_fade_start_t))
+            new_model_container.add_updater(make_model_fade_in(model_fade_start_t))
             
             # All elements that slide left continuously
             sliding_elements_loop = [
-                loop_video_model, loop_action_model, loop_chunk_markers, 
+                loop_video_model, loop_action_model, loop_model_container, loop_chunk_markers, 
                 loop_video_prediction
             ] + loop_action_chips
             initial_positions_loop = {id(mob): mob.get_center()[0] for mob in sliding_elements_loop}
             
             # New models also slide (so they move while fading in)
+            new_model_container_initial_x = new_model_container.get_center()[0]
             new_video_model_initial_x = new_video_model.get_center()[0]
             new_action_model_initial_x = new_action_model.get_center()[0]
             
@@ -955,7 +1024,8 @@ class InferenceRollout(Scene):
             for mob in sliding_elements_loop:
                 mob.add_updater(make_continuous_slide_updater(initial_positions_loop[id(mob)]))
             
-            # Add slide updaters to new models
+            # Add slide updaters to new models and container
+            new_model_container.add_updater(make_continuous_slide_updater(new_model_container_initial_x))
             new_video_model.add_updater(make_continuous_slide_updater(new_video_model_initial_x))
             new_action_model.add_updater(make_continuous_slide_updater(new_action_model_initial_x))
             
@@ -1344,33 +1414,76 @@ class InferenceRollout(Scene):
             history_lag_cleanup = 1 * CHIP_WIDTH  # Match the updater value
             loop_vision_history.move_to([-history_lag_cleanup - new_history_width/2, VISION_HISTORY_Y, 0])
             
-            # Swap to new models
+            # Swap to new models and container
             loop_video_model.clear_updaters()
             loop_action_model.clear_updaters()
+            loop_model_container.clear_updaters()
             new_video_model.clear_updaters()
             new_action_model.clear_updaters()
+            new_model_container.clear_updaters()
             
-            self.remove(loop_video_model, loop_action_model)
-            new_video_model.set_stroke(opacity=1)
-            new_action_model.set_stroke(opacity=1)
+            self.remove(loop_video_model, loop_action_model, loop_model_container)
+            new_video_model.set_opacity(1)
+            new_action_model.set_opacity(1)
+            new_model_container.set_opacity(1)
             
-            # Reset new models to correct position for next iteration
+            # Reset new models and container to correct position for next iteration
+            new_model_container.move_to([CHUNK_WIDTH / 2, new_model_container.get_center_y(), 0])
             new_video_model.move_to([VIDEO_MODEL_WIDTH / 2, VIDEO_MODEL_Y, 0])
             new_action_model.move_to([VIDEO_MODEL_WIDTH / 2 + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2, ACTION_MODEL_Y, 0])
             
+            loop_model_container = new_model_container
             loop_video_model = new_video_model
             loop_action_model = new_action_model
         
         # =====================================================================
         # PHASE 3: Fast continuous loop (2 chunks per second) - SIMPLIFIED
-        # No ghosting, no chips - just simple bars that update continuously
+        # No ghosting, no chips, no video prediction - condensed model
         # =====================================================================
+        
+        # Pause between phases 2 and 3
+        self.wait(1)
         
         fast_loop_time = 0.45  # 2 chunks per second
         
         # Remove chip-based elements from phase 2, replace with simple bars
         for chip in loop_action_chips:
             self.remove(chip)
+        
+        # Remove video prediction entirely for phase 3
+        self.remove(loop_video_prediction)
+        
+        # Calculate condensed model Y position (both models meet at center)
+        condensed_model_y = (VIDEO_MODEL_Y + ACTION_MODEL_Y) / 2
+        
+        # Animate models condensing to center position
+        # Create condensed container (much shorter - just one model height)
+        condensed_container = RoundedRectangle(
+            width=CHUNK_WIDTH,
+            height=MODEL_HEIGHT,
+            corner_radius=0.12,
+            stroke_width=2,
+            stroke_color=FILL_LIGHT_GRAY,
+            fill_color=FILL_LIGHT_GRAY,
+            fill_opacity=1.0
+        )
+        condensed_container.move_to([CHUNK_WIDTH / 2, condensed_model_y, 0])
+        condensed_container.set_opacity(0)
+        condensed_container.set_z_index(-1)  # Ensure container renders behind models
+        self.add(condensed_container)
+        
+        # Animate the transition: old models/container fade out, condensed versions fade in
+        self.play(
+            loop_model_container.animate.set_opacity(0),
+            loop_video_model.animate.move_to([VIDEO_MODEL_WIDTH / 2, condensed_model_y, 0]),
+            loop_action_model.animate.move_to([VIDEO_MODEL_WIDTH + ACTION_MODEL_WIDTH / 2, condensed_model_y, 0]),
+            condensed_container.animate.set_opacity(1),
+            run_time=0.5
+        )
+        
+        # Remove old container
+        self.remove(loop_model_container)
+        loop_model_container = condensed_container
         
         # Create simple action bar (spans from current time to next chunk boundary)
         # At t=0, full chunk wide. At t=1, width=0
@@ -1390,7 +1503,7 @@ class InferenceRollout(Scene):
         current_history_width = loop_vision_history.get_width()
         loop_vision_history.move_to([-current_history_width / 2, VISION_HISTORY_Y, 0])
         
-        for loop_iteration in range(10):  # More iterations at fast speed
+        for loop_iteration in range(20):  # More iterations at fast speed
             
             # Single time tracker for entire chunk (0 to 1)
             chunk_time = ValueTracker(0)
@@ -1432,7 +1545,7 @@ class InferenceRollout(Scene):
                     if t < fade_start:
                         return
                     fade_progress = min((t - fade_start) / model_fade_frac, 1.0)
-                    mob.set_stroke(opacity=1 - fade_progress)
+                    mob.set_opacity(1 - fade_progress)
                 return updater
             
             def make_model_fade_in_p3(fade_start):
@@ -1441,65 +1554,38 @@ class InferenceRollout(Scene):
                     if t < fade_start:
                         return
                     fade_progress = min((t - fade_start) / model_fade_frac, 1.0)
-                    mob.set_stroke(opacity=fade_progress)
+                    mob.set_opacity(fade_progress)
                 return updater
             
-            # Video prediction fades out over the first part of chunk
-            video_pred_initial_opacity = loop_video_prediction.get_fill_opacity()
-            def video_pred_fade_out_p3(mob):
-                t = chunk_time.get_value()
-                # Start fading immediately, fully faded by 60%
-                fade_end = 0.6
-                if t < fade_end:
-                    fade_progress = t / fade_end
-                    mob.set_fill(opacity=video_pred_initial_opacity * (1 - fade_progress))
-                    mob.set_stroke(opacity=1 - fade_progress)
-                else:
-                    mob.set_fill(opacity=0)
-                    mob.set_stroke(opacity=0)
-            
-            # Create new video prediction that appears at 75% (when video model finishes)
-            video_model_end_frac = 0.75  # Video model takes 75% of chunk
-            new_video_prediction = Rectangle(
-                width=3 * CHUNK_WIDTH,
-                height=TRACK_HEIGHT,
-                fill_color=VISION_COLOR,
-                fill_opacity=0,  # Starts invisible
-                stroke_color=VISION_COLOR,
-                stroke_width=2
+            # Create new condensed container for next chunk
+            new_model_container = RoundedRectangle(
+                width=CHUNK_WIDTH,
+                height=MODEL_HEIGHT,
+                corner_radius=0.12,
+                stroke_width=2,
+                stroke_color=FILL_LIGHT_GRAY,
+                fill_color=FILL_LIGHT_GRAY,
+                fill_opacity=1.0
             )
-            new_video_prediction.set_stroke(opacity=0)
-            # Position: starts at chunk boundary (x=0), extends 3 chunks to the right
-            new_video_prediction.move_to([3 * CHUNK_WIDTH / 2, VIDEO_PRED_Y, 0])
-            self.add(new_video_prediction)
+            new_model_container.move_to([CHUNK_WIDTH / 2, condensed_model_y, 0])
+            new_model_container.set_opacity(0)
+            new_model_container.set_z_index(-1)  # Ensure container renders behind models
             
-            new_video_pred_x = new_video_prediction.get_center()[0]
-            
-            def new_video_pred_fade_in_p3(mob):
-                t = chunk_time.get_value()
-                if t < video_model_end_frac:
-                    return  # Still invisible
-                # Fade in over 15% of chunk
-                fade_duration = 0.15
-                fade_progress = min((t - video_model_end_frac) / fade_duration, 1.0)
-                mob.set_fill(opacity=0.25 * fade_progress)
-                mob.set_stroke(opacity=fade_progress)
-            
-            # Create new models for next chunk
             new_video_model = ModelIndicator(width=VIDEO_MODEL_WIDTH, color=VISION_COLOR)
-            new_video_model.move_to([VIDEO_MODEL_WIDTH / 2, VIDEO_MODEL_Y, 0])
-            new_video_model.set_stroke(opacity=0)
+            new_video_model.move_to([VIDEO_MODEL_WIDTH / 2, condensed_model_y, 0])
+            new_video_model.set_opacity(0)
             
             new_action_model = ModelIndicator(width=ACTION_MODEL_WIDTH, color=ACTION_COLOR)
-            new_action_model.move_to([VIDEO_MODEL_WIDTH / 2 + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2, ACTION_MODEL_Y, 0])
-            new_action_model.set_stroke(opacity=0)
+            new_action_model.move_to([VIDEO_MODEL_WIDTH + ACTION_MODEL_WIDTH / 2, condensed_model_y, 0])
+            new_action_model.set_opacity(0)
             
-            self.add(new_video_model, new_action_model)
+            self.add(new_model_container, new_video_model, new_action_model)
             
-            # Elements that slide left
-            sliding_elements_p3 = [loop_video_model, loop_action_model, loop_chunk_markers, loop_video_prediction, new_video_prediction]
+            # Elements that slide left (no video prediction in phase 3)
+            sliding_elements_p3 = [loop_video_model, loop_action_model, loop_model_container, loop_chunk_markers]
             initial_positions_p3 = {id(mob): mob.get_center()[0] for mob in sliding_elements_p3}
             
+            new_model_container_x = new_model_container.get_center()[0]
             new_video_model_x = new_video_model.get_center()[0]
             new_action_model_x = new_action_model.get_center()[0]
             
@@ -1507,18 +1593,19 @@ class InferenceRollout(Scene):
             for mob in sliding_elements_p3:
                 mob.add_updater(make_slide_p3(initial_positions_p3[id(mob)]))
             
+            new_model_container.add_updater(make_slide_p3(new_model_container_x))
             new_video_model.add_updater(make_slide_p3(new_video_model_x))
             new_action_model.add_updater(make_slide_p3(new_action_model_x))
             
             loop_video_model.add_updater(make_model_fade_out_p3(model_fade_start))
             loop_action_model.add_updater(make_model_fade_out_p3(model_fade_start))
+            loop_model_container.add_updater(make_model_fade_out_p3(model_fade_start))
             new_video_model.add_updater(make_model_fade_in_p3(model_fade_start))
             new_action_model.add_updater(make_model_fade_in_p3(model_fade_start))
+            new_model_container.add_updater(make_model_fade_in_p3(model_fade_start))
             
             loop_vision_history.add_updater(history_grow_p3)
             fast_action_bar.add_updater(action_bar_shrink_p3)
-            loop_video_prediction.add_updater(video_pred_fade_out_p3)
-            new_video_prediction.add_updater(new_video_pred_fade_in_p3)
             
             # Animate
             self.play(
@@ -1531,18 +1618,23 @@ class InferenceRollout(Scene):
                 mob.clear_updaters()
             loop_vision_history.clear_updaters()
             fast_action_bar.clear_updaters()
+            new_model_container.clear_updaters()
             new_video_model.clear_updaters()
             new_action_model.clear_updaters()
+            loop_model_container.clear_updaters()
             loop_video_model.clear_updaters()
             loop_action_model.clear_updaters()
             
-            # Swap models
-            self.remove(loop_video_model, loop_action_model)
-            new_video_model.set_stroke(opacity=1)
-            new_action_model.set_stroke(opacity=1)
-            new_video_model.move_to([VIDEO_MODEL_WIDTH / 2, VIDEO_MODEL_Y, 0])
-            new_action_model.move_to([VIDEO_MODEL_WIDTH / 2 + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2, ACTION_MODEL_Y, 0])
+            # Swap models and container
+            self.remove(loop_video_model, loop_action_model, loop_model_container)
+            new_model_container.set_opacity(1)
+            new_video_model.set_opacity(1)
+            new_action_model.set_opacity(1)
+            new_model_container.move_to([CHUNK_WIDTH / 2, condensed_model_y, 0])
+            new_video_model.move_to([VIDEO_MODEL_WIDTH / 2, condensed_model_y, 0])
+            new_action_model.move_to([VIDEO_MODEL_WIDTH + ACTION_MODEL_WIDTH / 2, condensed_model_y, 0])
             
+            loop_model_container = new_model_container
             loop_video_model = new_video_model
             loop_action_model = new_action_model
             
@@ -1555,17 +1647,98 @@ class InferenceRollout(Scene):
             fast_action_bar.stretch_to_fit_width(CHUNK_WIDTH)
             fast_action_bar.move_to([CHUNK_WIDTH / 2, ACTION_Y, 0])
             
-            # Swap video predictions - old one is faded out, new one continues
-            self.remove(loop_video_prediction)
-            new_video_prediction.clear_updaters()
-            new_video_prediction.set_fill(opacity=0.25)
-            new_video_prediction.set_stroke(opacity=1)
-            # Don't reset position - it should continue from where it slid to
-            loop_video_prediction = new_video_prediction
-            
             # Reset chunk markers (shift back by one chunk)
             loop_chunk_markers.shift([CHUNK_WIDTH, 0, 0])
         
+        # =====================================================================
+        # FADE OUT (while animation continues for ~4 more chunks)
+        # =====================================================================
+        
+        fade_chunks = 4  # Number of chunks over which to fade
+        fade_time = fade_chunks * fast_loop_time  # Total fade duration
+        
+        # Create a time tracker for the fade period
+        fade_tracker = ValueTracker(0)
+        
+        # Gather all elements to fade
+        fade_elements = [
+            loop_vision_history,
+            loop_video_model,
+            loop_action_model,
+            loop_model_container,
+            loop_chunk_markers,
+            fast_action_bar,
+            timebar_group
+        ]
+        
+        # Create fade updaters that preserve fill/stroke opacity ratios
+        def make_fade_updater(mob):
+            # Capture initial opacities
+            initial_fill = mob.get_fill_opacity() if hasattr(mob, 'get_fill_opacity') else 1.0
+            initial_stroke = mob.get_stroke_opacity() if hasattr(mob, 'get_stroke_opacity') else 1.0
+            def updater(m):
+                t = fade_tracker.get_value()
+                fade_factor = 1 - t
+                m.set_fill(opacity=initial_fill * fade_factor)
+                m.set_stroke(opacity=initial_stroke * fade_factor)
+            return updater
+        
+        # Apply fade updaters
+        for elem in fade_elements:
+            elem.add_updater(make_fade_updater(elem))
+        
+        # Continue sliding during fade
+        initial_history_width_fade = loop_vision_history.get_width()
+        
+        def history_slide_fade(mob):
+            t = fade_tracker.get_value()
+            chunks_elapsed = t * fade_chunks
+            new_width = initial_history_width_fade + chunks_elapsed * CHUNK_WIDTH
+            mob.stretch_to_fit_width(new_width)
+            mob.move_to([-new_width / 2, VISION_HISTORY_Y, 0])
+        
+        loop_vision_history.add_updater(history_slide_fade)
+        
+        # Slide other elements
+        def make_slide_fade(initial_x):
+            def updater(mob):
+                t = fade_tracker.get_value()
+                chunks_elapsed = t * fade_chunks
+                new_x = initial_x - chunks_elapsed * CHUNK_WIDTH
+                mob.move_to([new_x, mob.get_center()[1], 0])
+            return updater
+        
+        slide_fade_elements = [loop_video_model, loop_action_model, loop_model_container, loop_chunk_markers]
+        slide_fade_positions = {id(m): m.get_center()[0] for m in slide_fade_elements}
+        
+        for elem in slide_fade_elements:
+            elem.add_updater(make_slide_fade(slide_fade_positions[id(elem)]))
+        
+        # Action bar shrinks during fade too
+        def action_bar_fade(mob):
+            t = fade_tracker.get_value()
+            chunk_progress = (t * fade_chunks) % 1.0
+            new_width = max(CHUNK_WIDTH * (1 - chunk_progress), 0.01)
+            mob.stretch_to_fit_width(new_width)
+            mob.move_to([new_width / 2, ACTION_Y, 0])
+        
+        fast_action_bar.add_updater(action_bar_fade)
+        
+        # Animate the fade
+        self.play(
+            fade_tracker.animate(rate_func=linear).set_value(1.0),
+            run_time=fade_time
+        )
+        
+        # Clear updaters
+        for elem in fade_elements:
+            elem.clear_updaters()
+        fast_action_bar.clear_updaters()
+        loop_vision_history.clear_updaters()
+        for elem in slide_fade_elements:
+            elem.clear_updaters()
+        
+        # Wait 1 second on white
         self.wait(1)
 
 
