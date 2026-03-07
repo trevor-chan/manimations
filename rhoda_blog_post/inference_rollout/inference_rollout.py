@@ -27,6 +27,8 @@ config.frame_height = 8
 CHUNK_WIDTH = 2.6             # World units per chunk (stretched horizontally)
 TRACK_HEIGHT = 0.5            # Height of data blocks
 MODEL_HEIGHT = 0.7            # Height of model indicator boxes
+NUM_ACTION_CHIPS = 8          # Number of action chips per chunk
+CHIP_WIDTH = CHUNK_WIDTH / NUM_ACTION_CHIPS  # Width of each action chip
 
 # Model positioning within a chunk (no margins - models span full chunk)
 MODEL_GAP = 0      # Small gap between video and action model
@@ -38,10 +40,12 @@ VIDEO_MODEL_WIDTH = AVAILABLE_MODEL_WIDTH * 0.6
 ACTION_MODEL_WIDTH = AVAILABLE_MODEL_WIDTH * 0.4
 
 # Vertical positions (y-coordinates)
-VIDEO_PRED_Y = 1.8            # Video prediction track
-MODEL_Y = 0.6                 # Model indicators track
-VISION_HISTORY_Y = -1.2       # Vision history track
-ACTION_Y = -0.2               # Action output track
+# Vertical positions (top to bottom: video model, video pred, action model, action pred, history)
+VIDEO_MODEL_Y = 2.0           # Video model track (top)
+VIDEO_PRED_Y = 1.0            # Video prediction track
+ACTION_MODEL_Y = 0.0          # Action model track
+ACTION_Y = -1.0               # Action output track
+VISION_HISTORY_Y = -2.0       # Vision history track (bottom)
 
 # Colors (all white for now - will be revised later)
 VISION_COLOR = WHITE
@@ -264,9 +268,8 @@ class InferenceRollout(Scene):
             width=history_width,
             height=TRACK_HEIGHT,
             fill_color=VISION_COLOR,
-            fill_opacity=0.7,
-            stroke_color=VISION_COLOR,
-            stroke_width=2
+            fill_opacity=1.0,
+            stroke_width=0  # Solid fill, no border
         )
         # Position: left edge at history_start, centered at VISION_HISTORY_Y
         vision_history.move_to([
@@ -285,7 +288,7 @@ class InferenceRollout(Scene):
         )
         # Position: left edge at timebar (no margin)
         video_model_x = time_to_x(0, current_time) + VIDEO_MODEL_WIDTH/2
-        video_model.move_to([video_model_x, MODEL_Y, 0])
+        video_model.move_to([video_model_x, VIDEO_MODEL_Y, 0])
         
         # Action Model indicator: immediately after video model with small gap
         action_model = ModelIndicator(
@@ -294,7 +297,7 @@ class InferenceRollout(Scene):
         )
         # Position: left edge at video model right edge + gap
         action_model_x = video_model_x + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2
-        action_model.move_to([action_model_x, MODEL_Y, 0])
+        action_model.move_to([action_model_x, ACTION_MODEL_Y, 0])
         
         # =====================================================================
         # ADD ELEMENTS TO SCENE
@@ -515,49 +518,55 @@ class InferenceRollout(Scene):
         vision_history.clear_updaters()
         
         # =====================================================================
-        # KEYFRAME 5 (Part 2): Action output appears from Action Model
+        # KEYFRAME 5 (Part 2): Action chips appear from Action Model
         # =====================================================================
         
-        # Action output: 1 chunk wide, positioned at the next chunk
-        # The chunk starts where the action model's right edge was before sliding
-        # After action_model_time slide, the next chunk boundary is at x = 0
-        action_output_width = CHUNK_WIDTH
-        action_output_x = action_output_width / 2  # Centered on next chunk (starting at timebar)
-        
-        # Create ghost from action model that expands to action output
+        # Create ghost chips from action model that expand to action chip positions
         action_model_current_pos = action_model.get_center()
         
-        action_ghost = Rectangle(
-            width=ACTION_MODEL_WIDTH,
-            height=TRACK_HEIGHT,
-            fill_color=ACTION_COLOR,
-            fill_opacity=0.25,
-            stroke_color=ACTION_COLOR,
-            stroke_width=2
-        )
-        action_ghost.move_to(action_model_current_pos)
-        self.add(action_ghost)
+        action_ghosts = []
+        action_chips = []
+        for i in range(NUM_ACTION_CHIPS):
+            # Ghost starts at action model
+            ghost = Rectangle(
+                width=ACTION_MODEL_WIDTH * 0.1,  # Start very narrow
+                height=TRACK_HEIGHT,
+                fill_color=ACTION_COLOR,
+                fill_opacity=0.25,
+                stroke_color=ACTION_COLOR,
+                stroke_width=1
+            )
+            ghost.move_to(action_model_current_pos)
+            self.add(ghost)
+            action_ghosts.append(ghost)
+            
+            # Final chip position
+            chip_x = CHIP_WIDTH / 2 + i * CHIP_WIDTH
+            chip = Rectangle(
+                width=CHIP_WIDTH,
+                height=TRACK_HEIGHT,
+                fill_color=ACTION_COLOR,
+                fill_opacity=0.25,
+                stroke_color=ACTION_COLOR,
+                stroke_width=1
+            )
+            chip.move_to([chip_x, ACTION_Y, 0])
+            action_chips.append(chip)
         
-        # Final action output
-        action_output = Rectangle(
-            width=action_output_width,
-            height=TRACK_HEIGHT,
-            fill_color=ACTION_COLOR,
-            fill_opacity=0.25,
-            stroke_color=ACTION_COLOR,
-            stroke_width=2
-        )
-        action_output.move_to([action_output_x, ACTION_Y, 0])
-        
-        # Animate ghost expanding from action model to action output position
+        # Animate all ghosts expanding from action model to their chip positions
         self.play(
-            action_ghost.animate.stretch(action_output_width / ACTION_MODEL_WIDTH, dim=0).move_to([action_output_x, ACTION_Y, 0]),
+            *[
+                ghost.animate.stretch_to_fit_width(CHIP_WIDTH).move_to([CHIP_WIDTH / 2 + i * CHIP_WIDTH, ACTION_Y, 0])
+                for i, ghost in enumerate(action_ghosts)
+            ],
             run_time=0.8
         )
         
-        # Instant swap
-        self.remove(action_ghost)
-        self.add(action_output)
+        # Instant swap ghosts for final chips
+        for ghost in action_ghosts:
+            self.remove(ghost)
+        for chip in action_chips:
+            self.add(chip)
         
         self.wait(0.5)
         
@@ -568,8 +577,8 @@ class InferenceRollout(Scene):
         # Collect all objects from explanatory phase
         explanatory_objects = [
             vision_history, video_model, action_model, 
-            video_prediction, action_output, chunk_markers
-        ]
+            video_prediction, chunk_markers
+        ] + action_chips
         
         # Fade everything out
         self.play(
@@ -612,20 +621,21 @@ class InferenceRollout(Scene):
             height=TRACK_HEIGHT,
             fill_color=VISION_COLOR,
             fill_opacity=1.0,
-            stroke_color=VISION_COLOR,
-            stroke_width=2
+            stroke_width=0  # Solid fill, no border
         )
-        loop_vision_history.move_to([-loop_history_width/2, VISION_HISTORY_Y, 0])
+        # Position with right edge 2 chips behind timebar
+        history_lag_init = 1 * CHIP_WIDTH  # Match the updater value
+        loop_vision_history.move_to([-history_lag_init - loop_history_width/2, VISION_HISTORY_Y, 0])
         self.add(loop_vision_history)
         
         # Video model - starts at the model position for the current chunk
         loop_video_model = ModelIndicator(width=VIDEO_MODEL_WIDTH, color=VISION_COLOR)
-        loop_video_model.move_to([VIDEO_MODEL_WIDTH / 2, MODEL_Y, 0])
+        loop_video_model.move_to([VIDEO_MODEL_WIDTH / 2, VIDEO_MODEL_Y, 0])
         self.add(loop_video_model)
         
         # Action model
         loop_action_model = ModelIndicator(width=ACTION_MODEL_WIDTH, color=ACTION_COLOR)
-        loop_action_model.move_to([VIDEO_MODEL_WIDTH / 2 + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2, MODEL_Y, 0])
+        loop_action_model.move_to([VIDEO_MODEL_WIDTH / 2 + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2, ACTION_MODEL_Y, 0])
         self.add(loop_action_model)
         
         # Video prediction: 3 chunks wide, starts at chunk boundary before timebar
@@ -641,23 +651,43 @@ class InferenceRollout(Scene):
         loop_video_prediction.move_to([-CHUNK_WIDTH + loop_video_pred_width/2, VIDEO_PRED_Y, 0])
         self.add(loop_video_prediction)
         
-        # Action output: 1 chunk wide, positioned at the current chunk (just past timebar)
-        loop_action_output = Rectangle(
-            width=CHUNK_WIDTH,
-            height=TRACK_HEIGHT,
-            fill_color=ACTION_COLOR,
-            fill_opacity=0.25,
-            stroke_color=ACTION_COLOR,
-            stroke_width=2
-        )
-        loop_action_output.move_to([CHUNK_WIDTH / 2, ACTION_Y, 0])  # Current chunk
-        self.add(loop_action_output)
+        # Action chips: 8 small chips, each 1/8 chunk wide
+        loop_action_chips = []
+        for i in range(NUM_ACTION_CHIPS):
+            chip = Rectangle(
+                width=CHIP_WIDTH,
+                height=TRACK_HEIGHT,
+                fill_color=ACTION_COLOR,
+                fill_opacity=0.25,
+                stroke_color=ACTION_COLOR,
+                stroke_width=1
+            )
+            # Position each chip: chip 0 is at the left of the chunk, chip 7 at the right
+            chip_x = CHIP_WIDTH / 2 + i * CHIP_WIDTH  # Starts at CHIP_WIDTH/2
+            chip.move_to([chip_x, ACTION_Y, 0])
+            self.add(chip)
+            loop_action_chips.append(chip)
         
-        # Fade in all loop objects together
+        # Create initial gap chips that fade in with the loop (for first iteration)
+        initial_fade_gap_chips = []
+        for i in range(1):  # 2 chips for first iteration
+            gap_chip = Rectangle(
+                width=CHIP_WIDTH,
+                height=TRACK_HEIGHT,
+                fill_color=VISION_COLOR,
+                fill_opacity=1.0,
+            )
+            gap_chip.set_stroke(width=0, opacity=0)
+            gap_chip_x = -CHIP_WIDTH/2 - i * CHIP_WIDTH
+            gap_chip.move_to([gap_chip_x, VISION_HISTORY_Y, 0])
+            self.add(gap_chip)
+            initial_fade_gap_chips.append(gap_chip)
+        
+        # Fade in all loop objects together (including initial gap chips)
         loop_objects = [
             loop_vision_history, loop_video_model, loop_action_model,
-            loop_video_prediction, loop_action_output, loop_chunk_markers
-        ]
+            loop_video_prediction, loop_chunk_markers
+        ] + loop_action_chips + initial_fade_gap_chips
         self.play(
             *[FadeIn(obj) for obj in loop_objects],
             run_time=0.5
@@ -670,11 +700,11 @@ class InferenceRollout(Scene):
             
             # Create new models for the NEXT chunk (will fade in at end of this chunk)
             new_video_model = ModelIndicator(width=VIDEO_MODEL_WIDTH, color=VISION_COLOR)
-            new_video_model.move_to([VIDEO_MODEL_WIDTH / 2, MODEL_Y, 0])
+            new_video_model.move_to([VIDEO_MODEL_WIDTH / 2, VIDEO_MODEL_Y, 0])
             new_video_model.set_stroke(opacity=0)  # Start invisible
             
             new_action_model = ModelIndicator(width=ACTION_MODEL_WIDTH, color=ACTION_COLOR)
-            new_action_model.move_to([VIDEO_MODEL_WIDTH / 2 + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2, MODEL_Y, 0])
+            new_action_model.move_to([VIDEO_MODEL_WIDTH / 2 + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2, ACTION_MODEL_Y, 0])
             new_action_model.set_stroke(opacity=0)  # Start invisible
             
             self.add(new_video_model, new_action_model)
@@ -708,8 +738,8 @@ class InferenceRollout(Scene):
             # All elements that slide left continuously
             sliding_elements_loop = [
                 loop_video_model, loop_action_model, loop_chunk_markers, 
-                loop_video_prediction, loop_action_output
-            ]
+                loop_video_prediction
+            ] + loop_action_chips
             initial_positions_loop = {id(mob): mob.get_center()[0] for mob in sliding_elements_loop}
             
             # New models also slide (so they move while fading in)
@@ -730,20 +760,138 @@ class InferenceRollout(Scene):
             new_video_model.add_updater(make_continuous_slide_updater(new_video_model_initial_x))
             new_action_model.add_updater(make_continuous_slide_updater(new_action_model_initial_x))
             
-            # Vision history grows continuously
+            # Action chips fade out as they reach the timebar (x=0)
+            def make_chip_fade_updater(chip_initial_x):
+                def updater(mob):
+                    t = chunk_time.get_value()
+                    current_x = chip_initial_x - t * CHUNK_WIDTH
+                    chip_right_edge = current_x + CHIP_WIDTH / 2
+                    
+                    # Fade out as the chip crosses the timebar
+                    if chip_right_edge <= 0:
+                        # Fully past timebar
+                        mob.set_opacity(0)
+                    elif chip_right_edge <= CHIP_WIDTH:
+                        # Fading out (chip is crossing the timebar)
+                        fade_progress = 1 - (chip_right_edge / CHIP_WIDTH)
+                        mob.set_fill(opacity=0.25 * (1 - fade_progress))
+                        mob.set_stroke(opacity=1 - fade_progress)
+                    else:
+                        # Not yet at timebar
+                        mob.set_fill(opacity=0.25)
+                        mob.set_stroke(opacity=1)
+                return updater
+            
+            for chip in loop_action_chips:
+                chip_initial_x = chip.get_center()[0]
+                chip.add_updater(make_chip_fade_updater(chip_initial_x))
+            
+            # Vision history grows via chips that fade in sequentially
             initial_history_width_loop = loop_vision_history.get_width()
-            def history_grow_continuous(mob):
+            
+            # Use pre-created gap chips for iteration 0, create new ones for others
+            if loop_iteration == 0:
+                # Use the chips that were faded in with the loop
+                initial_gap_chips = initial_fade_gap_chips
+            else:
+                # Create fresh gap chips for subsequent iterations
+                initial_gap_chips = []
+                gap_chip = Rectangle(
+                    width=CHIP_WIDTH,
+                    height=TRACK_HEIGHT,
+                    fill_color=VISION_COLOR,
+                    fill_opacity=1.0,  # Start fully visible to fill the gap
+                )
+                gap_chip.set_stroke(width=0, opacity=0)
+                gap_chip.move_to([-CHIP_WIDTH/2, VISION_HISTORY_Y, 0])
+                self.add(gap_chip)
+                initial_gap_chips.append(gap_chip)
+            
+            # Create history chips that appear at full opacity and fade OUT
+            history_chips = []
+            for i in range(NUM_ACTION_CHIPS):
+                chip = Rectangle(
+                    width=CHIP_WIDTH,
+                    height=TRACK_HEIGHT,
+                    fill_color=VISION_COLOR,
+                    fill_opacity=0,  # Start invisible, appear when it's their turn
+                )
+                chip.set_stroke(width=0, opacity=0)  # No border
+                # Position each chip at the leading edge
+                chip_x = CHIP_WIDTH / 2 + i * CHIP_WIDTH
+                chip.move_to([chip_x, VISION_HISTORY_Y, 0])
+                self.add(chip)
+                history_chips.append(chip)
+            
+            # Updater: chips slide left, fade IN, HOLD at full opacity, then fade OUT
+            def make_history_chip_updater(chip_index, initial_chip_x):
+                def updater(mob):
+                    t = chunk_time.get_value()
+                    # Slide with timeline
+                    new_x = initial_chip_x - t * CHUNK_WIDTH
+                    mob.move_to([new_x, VISION_HISTORY_Y, 0])
+                    
+                    # Chip timing: fade in -> hold -> fade out (1 chip each)
+                    chip_start_t = chip_index / NUM_ACTION_CHIPS
+                    chip_end_t = (chip_index + 1) / NUM_ACTION_CHIPS      # End of fade in
+                    hold_end_t = (chip_index + 2) / NUM_ACTION_CHIPS      # End of hold (1 chip duration)
+                    fade_out_end_t = (chip_index + 3) / NUM_ACTION_CHIPS  # End of fade out
+                    
+                    if t < chip_start_t:
+                        # Not yet visible
+                        mob.set_fill(opacity=0)
+                    elif t < chip_end_t:
+                        # Fading IN
+                        fade_in_progress = (t - chip_start_t) / (chip_end_t - chip_start_t)
+                        mob.set_fill(opacity=1.0 * fade_in_progress)
+                    elif t < hold_end_t:
+                        # HOLD at full opacity
+                        mob.set_fill(opacity=1.0)
+                    elif t < fade_out_end_t:
+                        # Fading out (history is catching up)
+                        fade_out_progress = (t - hold_end_t) / (fade_out_end_t - hold_end_t)
+                        mob.set_fill(opacity=1.0 * (1 - fade_out_progress))
+                    else:
+                        # Fully faded out (absorbed into history)
+                        mob.set_fill(opacity=0)
+                return updater
+            
+            for i, chip in enumerate(history_chips):
+                chip_initial_x = chip.get_center()[0]
+                chip.add_updater(make_history_chip_updater(i, chip_initial_x))
+            
+            # Updater for initial gap chip (just slide, stay visible)
+            def make_gap_chip_updater(initial_gap_x):
+                def updater(mob):
+                    t = chunk_time.get_value()
+                    # Slide with timeline, stay fully visible
+                    new_x = initial_gap_x - t * CHUNK_WIDTH
+                    mob.move_to([new_x, VISION_HISTORY_Y, 0])
+                return updater
+            
+            for gap_chip in initial_gap_chips:
+                gap_chip_initial_x = gap_chip.get_center()[0]
+                gap_chip.add_updater(make_gap_chip_updater(gap_chip_initial_x))
+            
+            # Main history grows but stays 2 chips behind the current time
+            # (chips fade in over 1 slot, then fade out over the next slot)
+            history_lag = 1 * CHIP_WIDTH  # Right edge stays this far behind timebar
+            def history_grow_delayed(mob):
                 t = chunk_time.get_value()
+                # History grows continuously but right edge stays behind timebar
                 new_width = initial_history_width_loop + t * CHUNK_WIDTH
                 mob.stretch_to_fit_width(new_width)
-                mob.move_to([-new_width/2, VISION_HISTORY_Y, 0])
-            loop_vision_history.add_updater(history_grow_continuous)
+                # Position so right edge is at -history_lag (behind timebar)
+                right_edge = -history_lag
+                center_x = right_edge - new_width/2
+                mob.move_to([center_x, VISION_HISTORY_Y, 0])
+            loop_vision_history.add_updater(history_grow_delayed)
             
-            # Old video prediction fades out
+            # Old video prediction fades out (completes in first 15% of chunk)
             old_video_pred_initial_opacity = loop_video_prediction.get_fill_opacity()
             def old_video_pred_fade(mob):
                 t = chunk_time.get_value()
-                fade_progress = min(t / 0.25, 1.0)
+                fade_progress = min(t / 0.15, 1.0)
                 mob.set_fill(opacity=old_video_pred_initial_opacity * (1 - fade_progress))
                 mob.set_stroke(opacity=1 - fade_progress)
             loop_video_prediction.add_updater(old_video_pred_fade)
@@ -766,7 +914,7 @@ class InferenceRollout(Scene):
                     mob._start_height = mob.get_height()
                 
                 current_x = mob._start_x + (target_x - mob._start_x) * ghost_progress
-                current_y = VISION_HISTORY_Y + (MODEL_Y - VISION_HISTORY_Y) * ghost_progress
+                current_y = VISION_HISTORY_Y + (VIDEO_MODEL_Y - VISION_HISTORY_Y) * ghost_progress
                 mob.move_to([current_x, current_y, 0])
                 
                 target_width = VIDEO_MODEL_WIDTH * 0.8
@@ -806,7 +954,7 @@ class InferenceRollout(Scene):
                 video_pred_final_x = current_chunk_start + video_pred_width_loop / 2
                 
                 current_x = video_model_current_x + (video_pred_final_x - video_model_current_x) * ghost_progress
-                current_y = MODEL_Y + (VIDEO_PRED_Y - MODEL_Y) * ghost_progress
+                current_y = VIDEO_MODEL_Y + (VIDEO_PRED_Y - VIDEO_MODEL_Y) * ghost_progress
                 mob.move_to([current_x, current_y, 0])
                 
                 start_width = VIDEO_MODEL_WIDTH * 0.8
@@ -884,7 +1032,7 @@ class InferenceRollout(Scene):
                     mob._pred_start_x = mob.get_center()[0]
                 
                 current_x = mob._pred_start_x + (target_x - mob._pred_start_x) * ghost_progress
-                current_y = VIDEO_PRED_Y + (MODEL_Y - VIDEO_PRED_Y) * ghost_progress
+                current_y = VIDEO_PRED_Y + (ACTION_MODEL_Y - VIDEO_PRED_Y) * ghost_progress
                 mob.move_to([current_x, current_y, 0])
                 
                 new_width = video_pred_width_loop + (ACTION_MODEL_WIDTH - video_pred_width_loop) * ghost_progress
@@ -893,53 +1041,50 @@ class InferenceRollout(Scene):
             
             pred_ghost_in.add_updater(pred_ghost_in_updater)
             
-            # Action output ghost OUT of action model
-            action_ghost_out = Rectangle(
-                width=ACTION_MODEL_WIDTH * 0.8,
-                height=TRACK_HEIGHT,
-                fill_color=ACTION_COLOR,
-                fill_opacity=0.0,
-                stroke_color=ACTION_COLOR,
-                stroke_width=2
-            )
-            action_ghost_out.set_stroke(opacity=0)
-            self.add(action_ghost_out)
+            # Action chips ghost OUT of action model - create 8 chips
+            action_chips_out = []
+            for i in range(NUM_ACTION_CHIPS):
+                chip_ghost = Rectangle(
+                    width=ACTION_MODEL_WIDTH * 0.1,  # Start very narrow
+                    height=TRACK_HEIGHT,
+                    fill_color=ACTION_COLOR,
+                    fill_opacity=0.0,
+                    stroke_color=ACTION_COLOR,
+                    stroke_width=1
+                )
+                chip_ghost.set_stroke(opacity=0)
+                self.add(chip_ghost)
+                action_chips_out.append(chip_ghost)
             
             action_out_start_t = 1 - ghost_duration_frac
-            def action_ghost_out_updater(mob):
-                t = chunk_time.get_value()
-                if t < action_out_start_t:
-                    return
-                
-                ghost_progress = min((t - action_out_start_t) / ghost_duration_frac, 1.0)
-                
-                action_model_current_x = action_model_initial_x - (t - video_model_frac) * CHUNK_WIDTH
-                action_output_final_x = CHUNK_WIDTH / 2
-                
-                current_x = action_model_current_x + (action_output_final_x - action_model_current_x) * ghost_progress
-                current_y = MODEL_Y + (ACTION_Y - MODEL_Y) * ghost_progress
-                mob.move_to([current_x, current_y, 0])
-                
-                start_width = ACTION_MODEL_WIDTH * 0.8
-                new_width = start_width + (CHUNK_WIDTH - start_width) * ghost_progress
-                mob.stretch_to_fit_width(new_width)
-                
-                mob.set_fill(ACTION_COLOR, opacity=0.25 * ghost_progress)
-                mob.set_stroke(ACTION_COLOR, opacity=ghost_progress)
             
-            action_ghost_out.add_updater(action_ghost_out_updater)
+            def make_chip_ghost_out_updater(chip_index, mob):
+                # Each chip goes to a different final position
+                final_chip_x = CHIP_WIDTH / 2 + chip_index * CHIP_WIDTH
+                
+                def updater(m):
+                    t = chunk_time.get_value()
+                    if t < action_out_start_t:
+                        return
+                    
+                    ghost_progress = min((t - action_out_start_t) / ghost_duration_frac, 1.0)
+                    
+                    action_model_current_x = action_model_initial_x - (t - video_model_frac) * CHUNK_WIDTH
+                    
+                    current_x = action_model_current_x + (final_chip_x - action_model_current_x) * ghost_progress
+                    current_y = ACTION_MODEL_Y + (ACTION_Y - ACTION_MODEL_Y) * ghost_progress
+                    m.move_to([current_x, current_y, 0])
+                    
+                    start_width = ACTION_MODEL_WIDTH * 0.1
+                    new_width = start_width + (CHIP_WIDTH - start_width) * ghost_progress
+                    m.stretch_to_fit_width(new_width)
+                    
+                    m.set_fill(ACTION_COLOR, opacity=0.25 * ghost_progress)
+                    m.set_stroke(ACTION_COLOR, opacity=ghost_progress)
+                return updater
             
-            # Old action output fades out
-            old_action_output_initial_opacity = loop_action_output.get_fill_opacity()
-            old_action_initial_x = loop_action_output.get_center()[0]
-            def old_action_fade_and_slide(mob):
-                t = chunk_time.get_value()
-                new_x = old_action_initial_x - (t - video_model_frac) * CHUNK_WIDTH
-                mob.move_to([new_x, mob.get_center()[1], 0])
-                fade_progress = min((t - video_model_frac) / action_model_frac, 1.0) if action_model_frac > 0 else 1.0
-                mob.set_fill(opacity=old_action_output_initial_opacity * (1 - fade_progress))
-                mob.set_stroke(opacity=1 - fade_progress)
-            loop_action_output.add_updater(old_action_fade_and_slide)
+            for i, chip_ghost in enumerate(action_chips_out):
+                chip_ghost.add_updater(make_chip_ghost_out_updater(i, chip_ghost))
             
             # Animate through action model phase
             self.play(
@@ -950,29 +1095,55 @@ class InferenceRollout(Scene):
             # Cleanup action model phase
             pred_ghost_in.clear_updaters()
             self.remove(pred_ghost_in)
-            action_ghost_out.clear_updaters()
-            self.remove(action_ghost_out)
-            loop_action_output.clear_updaters()
-            self.remove(loop_action_output)
             
-            # Create new action output
-            new_action_output = Rectangle(
-                width=CHUNK_WIDTH,
-                height=TRACK_HEIGHT,
-                fill_color=ACTION_COLOR,
-                fill_opacity=0.25,
-                stroke_color=ACTION_COLOR,
-                stroke_width=2
-            )
-            new_action_output.move_to([CHUNK_WIDTH / 2, ACTION_Y, 0])
-            self.add(new_action_output)
-            loop_action_output = new_action_output
+            # Clear and remove all chip ghosts
+            for chip_ghost in action_chips_out:
+                chip_ghost.clear_updaters()
+                self.remove(chip_ghost)
+            
+            # Remove old chips that have faded out
+            for chip in loop_action_chips:
+                chip.clear_updaters()
+                self.remove(chip)
+            
+            # Create new action chips for the next chunk
+            loop_action_chips = []
+            for i in range(NUM_ACTION_CHIPS):
+                chip = Rectangle(
+                    width=CHIP_WIDTH,
+                    height=TRACK_HEIGHT,
+                    fill_color=ACTION_COLOR,
+                    fill_opacity=0.25,
+                    stroke_color=ACTION_COLOR,
+                    stroke_width=1
+                )
+                chip_x = CHIP_WIDTH / 2 + i * CHIP_WIDTH
+                chip.move_to([chip_x, ACTION_Y, 0])
+                self.add(chip)
+                loop_action_chips.append(chip)
             
             # Clear all updaters
             for mob in sliding_elements_loop:
                 mob.clear_updaters()
             loop_vision_history.clear_updaters()
             loop_video_prediction.clear_updaters()
+            
+            # Clean up history chips and extend main history
+            for chip in history_chips:
+                chip.clear_updaters()
+                self.remove(chip)
+            
+            # Clean up initial gap chips
+            for gap_chip in initial_gap_chips:
+                gap_chip.clear_updaters()
+                self.remove(gap_chip)
+            
+            # Extend the main history to include the new chunk
+            new_history_width = initial_history_width_loop + CHUNK_WIDTH
+            loop_vision_history.stretch_to_fit_width(new_history_width)
+            # Position with right edge 2 chips behind timebar
+            history_lag_cleanup = 1 * CHIP_WIDTH  # Match the updater value
+            loop_vision_history.move_to([-history_lag_cleanup - new_history_width/2, VISION_HISTORY_Y, 0])
             
             # Swap to new models
             loop_video_model.clear_updaters()
@@ -985,8 +1156,8 @@ class InferenceRollout(Scene):
             new_action_model.set_stroke(opacity=1)
             
             # Reset new models to correct position for next iteration
-            new_video_model.move_to([VIDEO_MODEL_WIDTH / 2, MODEL_Y, 0])
-            new_action_model.move_to([VIDEO_MODEL_WIDTH / 2 + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2, MODEL_Y, 0])
+            new_video_model.move_to([VIDEO_MODEL_WIDTH / 2, VIDEO_MODEL_Y, 0])
+            new_action_model.move_to([VIDEO_MODEL_WIDTH / 2 + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2, ACTION_MODEL_Y, 0])
             
             loop_video_model = new_video_model
             loop_action_model = new_action_model
