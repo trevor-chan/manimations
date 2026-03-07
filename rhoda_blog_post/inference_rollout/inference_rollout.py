@@ -284,9 +284,9 @@ class InferenceRollout(Scene):
         current_time = 0
         
         # Vision History: solid purple block extending from past to present
-        # Shows ~2.5 chunks of history
-        history_start = -2.5  # 2.5 chunks in the past
-        history_end = 0       # Up to current time
+        # History extends off screen to the left
+        history_start = -4  # Far off screen to the left
+        history_end = 0      # Up to current time
         history_width = (history_end - history_start) * CHUNK_WIDTH
         
         vision_history = Rectangle(
@@ -790,7 +790,7 @@ class InferenceRollout(Scene):
         shift_amount = original_center_x - phase1_chunk_markers_pos[0]
         
         loop_chunk_markers = VGroup()
-        for i in range(-5, 8):
+        for i in range(-5, 12):  # Extended range for more markers to the right
             marker = Line(
                 start=[i * CHUNK_WIDTH - shift_amount, CHUNK_MARKER_BOTTOM, 0],
                 end=[i * CHUNK_WIDTH - shift_amount, CHUNK_MARKER_TOP, 0],
@@ -1349,170 +1349,212 @@ class InferenceRollout(Scene):
             loop_video_model = new_video_model
             loop_action_model = new_action_model
         
-        # # =====================================================================
-        # # PHASE 3: Fast continuous loop (2 chunks per second) - SIMPLIFIED
-        # # No ghosting, no chips - just simple bars that update continuously
-        # # =====================================================================
+        # =====================================================================
+        # PHASE 3: Fast continuous loop (2 chunks per second) - SIMPLIFIED
+        # No ghosting, no chips - just simple bars that update continuously
+        # =====================================================================
         
-        # fast_loop_time = 0.5  # 2 chunks per second
+        fast_loop_time = 0.45  # 2 chunks per second
         
-        # # Remove chip-based elements from phase 2, replace with simple bars
-        # for chip in loop_action_chips:
-        #     self.remove(chip)
+        # Remove chip-based elements from phase 2, replace with simple bars
+        for chip in loop_action_chips:
+            self.remove(chip)
         
-        # # Create simple action bar (spans from current time to next chunk boundary)
-        # # At t=0, full chunk wide. At t=1, width=0
-        # fast_action_bar = Rectangle(
-        #     width=CHUNK_WIDTH,
-        #     height=TRACK_HEIGHT,
-        #     fill_color=ACTION_COLOR,
-        #     fill_opacity=0.25,
-        #     stroke_color=ACTION_COLOR,
-        #     stroke_width=1
-        # )
-        # fast_action_bar.move_to([CHUNK_WIDTH / 2, ACTION_Y, 0])
-        # self.add(fast_action_bar)
+        # Create simple action bar (spans from current time to next chunk boundary)
+        # At t=0, full chunk wide. At t=1, width=0
+        fast_action_bar = Rectangle(
+            width=CHUNK_WIDTH,
+            height=TRACK_HEIGHT,
+            fill_color=ACTION_COLOR,
+            fill_opacity=0.25,
+            stroke_color=ACTION_COLOR,
+            stroke_width=1
+        )
+        # Left edge at timebar (x=0), so center is at CHUNK_WIDTH/2
+        fast_action_bar.move_to([CHUNK_WIDTH / 2, ACTION_Y, 0])
+        self.add(fast_action_bar)
         
-        # # Extend history to be fully caught up (right edge at x=0)
-        # current_history_width = loop_vision_history.get_width()
-        # loop_vision_history.move_to([-current_history_width / 2, VISION_HISTORY_Y, 0])
+        # Extend history to be fully caught up (right edge at x=0)
+        current_history_width = loop_vision_history.get_width()
+        loop_vision_history.move_to([-current_history_width / 2, VISION_HISTORY_Y, 0])
         
-        # for loop_iteration in range(10):  # More iterations at fast speed
+        for loop_iteration in range(10):  # More iterations at fast speed
             
-        #     # Single time tracker for entire chunk (0 to 1)
-        #     chunk_time = ValueTracker(0)
+            # Single time tracker for entire chunk (0 to 1)
+            chunk_time = ValueTracker(0)
             
-        #     # Capture initial widths/positions for this iteration
-        #     initial_history_width_p3 = loop_vision_history.get_width()
+            # Capture initial widths/positions for this iteration
+            initial_history_width_p3 = loop_vision_history.get_width()
             
-        #     # Simple slide updater
-        #     def make_slide_p3(initial_x):
-        #         def updater(mob):
-        #             t = chunk_time.get_value()
-        #             new_x = initial_x - t * CHUNK_WIDTH
-        #             mob.move_to([new_x, mob.get_center()[1], 0])
-        #         return updater
+            # Simple slide updater
+            def make_slide_p3(initial_x):
+                def updater(mob):
+                    t = chunk_time.get_value()
+                    new_x = initial_x - t * CHUNK_WIDTH
+                    mob.move_to([new_x, mob.get_center()[1], 0])
+                return updater
             
-        #     # History grows and stays caught up with timebar (right edge at x=0)
-        #     def history_grow_p3(mob):
-        #         t = chunk_time.get_value()
-        #         new_width = initial_history_width_p3 + t * CHUNK_WIDTH
-        #         mob.stretch_to_fit_width(new_width)
-        #         mob.move_to([-new_width / 2, VISION_HISTORY_Y, 0])
+            # History grows and stays caught up with timebar (right edge at x=0)
+            def history_grow_p3(mob):
+                t = chunk_time.get_value()
+                new_width = initial_history_width_p3 + t * CHUNK_WIDTH
+                mob.stretch_to_fit_width(new_width)
+                mob.move_to([-new_width / 2, VISION_HISTORY_Y, 0])
             
-        #     # Action bar shrinks as time progresses (right edge stays at chunk boundary)
-        #     def action_bar_shrink_p3(mob):
-        #         t = chunk_time.get_value()
-        #         # Width shrinks from CHUNK_WIDTH to 0
-        #         new_width = max(CHUNK_WIDTH * (1 - t), 0.01)  # Avoid zero width
-        #         mob.stretch_to_fit_width(new_width)
-        #         # Right edge stays at x = CHUNK_WIDTH (next chunk boundary)
-        #         mob.move_to([CHUNK_WIDTH - new_width / 2, ACTION_Y, 0])
+            # Action bar shrinks as time progresses (left edge stays at timebar x=0)
+            def action_bar_shrink_p3(mob):
+                t = chunk_time.get_value()
+                # Width shrinks from CHUNK_WIDTH to 0 as time progresses
+                new_width = max(CHUNK_WIDTH * (1 - t), 0.01)  # Avoid zero width
+                mob.stretch_to_fit_width(new_width)
+                # Left edge stays at x=0 (timebar), right edge shrinks inward
+                mob.move_to([new_width / 2, ACTION_Y, 0])
             
-        #     # Model crossfade (simple instant swap at end)
-        #     model_fade_frac = 0.15  # Last 15% of chunk
-        #     model_fade_start = 1 - model_fade_frac
+            # Model crossfade (simple instant swap at end)
+            model_fade_frac = 0.15  # Last 15% of chunk
+            model_fade_start = 1 - model_fade_frac
             
-        #     def make_model_fade_out_p3(fade_start):
-        #         def updater(mob):
-        #             t = chunk_time.get_value()
-        #             if t < fade_start:
-        #                 return
-        #             fade_progress = min((t - fade_start) / model_fade_frac, 1.0)
-        #             mob.set_stroke(opacity=1 - fade_progress)
-        #         return updater
+            def make_model_fade_out_p3(fade_start):
+                def updater(mob):
+                    t = chunk_time.get_value()
+                    if t < fade_start:
+                        return
+                    fade_progress = min((t - fade_start) / model_fade_frac, 1.0)
+                    mob.set_stroke(opacity=1 - fade_progress)
+                return updater
             
-        #     def make_model_fade_in_p3(fade_start):
-        #         def updater(mob):
-        #             t = chunk_time.get_value()
-        #             if t < fade_start:
-        #                 return
-        #             fade_progress = min((t - fade_start) / model_fade_frac, 1.0)
-        #             mob.set_stroke(opacity=fade_progress)
-        #         return updater
+            def make_model_fade_in_p3(fade_start):
+                def updater(mob):
+                    t = chunk_time.get_value()
+                    if t < fade_start:
+                        return
+                    fade_progress = min((t - fade_start) / model_fade_frac, 1.0)
+                    mob.set_stroke(opacity=fade_progress)
+                return updater
             
-        #     # Create new models for next chunk
-        #     new_video_model = ModelIndicator(width=VIDEO_MODEL_WIDTH, color=VISION_COLOR)
-        #     new_video_model.move_to([VIDEO_MODEL_WIDTH / 2, VIDEO_MODEL_Y, 0])
-        #     new_video_model.set_stroke(opacity=0)
+            # Video prediction fades out over the first part of chunk
+            video_pred_initial_opacity = loop_video_prediction.get_fill_opacity()
+            def video_pred_fade_out_p3(mob):
+                t = chunk_time.get_value()
+                # Start fading immediately, fully faded by 60%
+                fade_end = 0.6
+                if t < fade_end:
+                    fade_progress = t / fade_end
+                    mob.set_fill(opacity=video_pred_initial_opacity * (1 - fade_progress))
+                    mob.set_stroke(opacity=1 - fade_progress)
+                else:
+                    mob.set_fill(opacity=0)
+                    mob.set_stroke(opacity=0)
             
-        #     new_action_model = ModelIndicator(width=ACTION_MODEL_WIDTH, color=ACTION_COLOR)
-        #     new_action_model.move_to([VIDEO_MODEL_WIDTH / 2 + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2, ACTION_MODEL_Y, 0])
-        #     new_action_model.set_stroke(opacity=0)
+            # Create new video prediction that appears at 75% (when video model finishes)
+            video_model_end_frac = 0.75  # Video model takes 75% of chunk
+            new_video_prediction = Rectangle(
+                width=3 * CHUNK_WIDTH,
+                height=TRACK_HEIGHT,
+                fill_color=VISION_COLOR,
+                fill_opacity=0,  # Starts invisible
+                stroke_color=VISION_COLOR,
+                stroke_width=2
+            )
+            new_video_prediction.set_stroke(opacity=0)
+            # Position: starts at chunk boundary (x=0), extends 3 chunks to the right
+            new_video_prediction.move_to([3 * CHUNK_WIDTH / 2, VIDEO_PRED_Y, 0])
+            self.add(new_video_prediction)
             
-        #     self.add(new_video_model, new_action_model)
+            new_video_pred_x = new_video_prediction.get_center()[0]
             
-        #     # Elements that slide left
-        #     sliding_elements_p3 = [loop_video_model, loop_action_model, loop_chunk_markers, loop_video_prediction]
-        #     initial_positions_p3 = {id(mob): mob.get_center()[0] for mob in sliding_elements_p3}
+            def new_video_pred_fade_in_p3(mob):
+                t = chunk_time.get_value()
+                if t < video_model_end_frac:
+                    return  # Still invisible
+                # Fade in over 15% of chunk
+                fade_duration = 0.15
+                fade_progress = min((t - video_model_end_frac) / fade_duration, 1.0)
+                mob.set_fill(opacity=0.25 * fade_progress)
+                mob.set_stroke(opacity=fade_progress)
             
-        #     new_video_model_x = new_video_model.get_center()[0]
-        #     new_action_model_x = new_action_model.get_center()[0]
+            # Create new models for next chunk
+            new_video_model = ModelIndicator(width=VIDEO_MODEL_WIDTH, color=VISION_COLOR)
+            new_video_model.move_to([VIDEO_MODEL_WIDTH / 2, VIDEO_MODEL_Y, 0])
+            new_video_model.set_stroke(opacity=0)
             
-        #     # Add updaters
-        #     for mob in sliding_elements_p3:
-        #         mob.add_updater(make_slide_p3(initial_positions_p3[id(mob)]))
+            new_action_model = ModelIndicator(width=ACTION_MODEL_WIDTH, color=ACTION_COLOR)
+            new_action_model.move_to([VIDEO_MODEL_WIDTH / 2 + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2, ACTION_MODEL_Y, 0])
+            new_action_model.set_stroke(opacity=0)
             
-        #     new_video_model.add_updater(make_slide_p3(new_video_model_x))
-        #     new_action_model.add_updater(make_slide_p3(new_action_model_x))
+            self.add(new_video_model, new_action_model)
             
-        #     loop_video_model.add_updater(make_model_fade_out_p3(model_fade_start))
-        #     loop_action_model.add_updater(make_model_fade_out_p3(model_fade_start))
-        #     new_video_model.add_updater(make_model_fade_in_p3(model_fade_start))
-        #     new_action_model.add_updater(make_model_fade_in_p3(model_fade_start))
+            # Elements that slide left
+            sliding_elements_p3 = [loop_video_model, loop_action_model, loop_chunk_markers, loop_video_prediction, new_video_prediction]
+            initial_positions_p3 = {id(mob): mob.get_center()[0] for mob in sliding_elements_p3}
             
-        #     loop_vision_history.add_updater(history_grow_p3)
-        #     fast_action_bar.add_updater(action_bar_shrink_p3)
+            new_video_model_x = new_video_model.get_center()[0]
+            new_action_model_x = new_action_model.get_center()[0]
             
-        #     # Animate
-        #     self.play(
-        #         chunk_time.animate(rate_func=linear).set_value(1.0),
-        #         run_time=fast_loop_time
-        #     )
+            # Add updaters
+            for mob in sliding_elements_p3:
+                mob.add_updater(make_slide_p3(initial_positions_p3[id(mob)]))
             
-        #     # Cleanup
-        #     for mob in sliding_elements_p3:
-        #         mob.clear_updaters()
-        #     loop_vision_history.clear_updaters()
-        #     fast_action_bar.clear_updaters()
-        #     new_video_model.clear_updaters()
-        #     new_action_model.clear_updaters()
-        #     loop_video_model.clear_updaters()
-        #     loop_action_model.clear_updaters()
+            new_video_model.add_updater(make_slide_p3(new_video_model_x))
+            new_action_model.add_updater(make_slide_p3(new_action_model_x))
             
-        #     # Swap models
-        #     self.remove(loop_video_model, loop_action_model)
-        #     new_video_model.set_stroke(opacity=1)
-        #     new_action_model.set_stroke(opacity=1)
-        #     new_video_model.move_to([VIDEO_MODEL_WIDTH / 2, VIDEO_MODEL_Y, 0])
-        #     new_action_model.move_to([VIDEO_MODEL_WIDTH / 2 + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2, ACTION_MODEL_Y, 0])
+            loop_video_model.add_updater(make_model_fade_out_p3(model_fade_start))
+            loop_action_model.add_updater(make_model_fade_out_p3(model_fade_start))
+            new_video_model.add_updater(make_model_fade_in_p3(model_fade_start))
+            new_action_model.add_updater(make_model_fade_in_p3(model_fade_start))
             
-        #     loop_video_model = new_video_model
-        #     loop_action_model = new_action_model
+            loop_vision_history.add_updater(history_grow_p3)
+            fast_action_bar.add_updater(action_bar_shrink_p3)
+            loop_video_prediction.add_updater(video_pred_fade_out_p3)
+            new_video_prediction.add_updater(new_video_pred_fade_in_p3)
             
-        #     # Update history position
-        #     new_history_width = initial_history_width_p3 + CHUNK_WIDTH
-        #     loop_vision_history.stretch_to_fit_width(new_history_width)
-        #     loop_vision_history.move_to([-new_history_width / 2, VISION_HISTORY_Y, 0])
+            # Animate
+            self.play(
+                chunk_time.animate(rate_func=linear).set_value(1.0),
+                run_time=fast_loop_time
+            )
             
-        #     # Reset action bar for next chunk
-        #     fast_action_bar.stretch_to_fit_width(CHUNK_WIDTH)
-        #     fast_action_bar.move_to([CHUNK_WIDTH / 2, ACTION_Y, 0])
+            # Cleanup
+            for mob in sliding_elements_p3:
+                mob.clear_updaters()
+            loop_vision_history.clear_updaters()
+            fast_action_bar.clear_updaters()
+            new_video_model.clear_updaters()
+            new_action_model.clear_updaters()
+            loop_video_model.clear_updaters()
+            loop_action_model.clear_updaters()
             
-        #     # Reset video prediction
-        #     self.remove(loop_video_prediction)
-        #     loop_video_prediction = Rectangle(
-        #         width=3 * CHUNK_WIDTH,
-        #         height=TRACK_HEIGHT,
-        #         fill_color=VISION_COLOR,
-        #         fill_opacity=0.25,
-        #         stroke_color=VISION_COLOR,
-        #         stroke_width=2
-        #     )
-        #     loop_video_prediction.move_to([3 * CHUNK_WIDTH / 2, VIDEO_PRED_Y, 0])
-        #     self.add(loop_video_prediction)
+            # Swap models
+            self.remove(loop_video_model, loop_action_model)
+            new_video_model.set_stroke(opacity=1)
+            new_action_model.set_stroke(opacity=1)
+            new_video_model.move_to([VIDEO_MODEL_WIDTH / 2, VIDEO_MODEL_Y, 0])
+            new_action_model.move_to([VIDEO_MODEL_WIDTH / 2 + VIDEO_MODEL_WIDTH/2 + MODEL_GAP + ACTION_MODEL_WIDTH/2, ACTION_MODEL_Y, 0])
+            
+            loop_video_model = new_video_model
+            loop_action_model = new_action_model
+            
+            # Update history position
+            new_history_width = initial_history_width_p3 + CHUNK_WIDTH
+            loop_vision_history.stretch_to_fit_width(new_history_width)
+            loop_vision_history.move_to([-new_history_width / 2, VISION_HISTORY_Y, 0])
+            
+            # Reset action bar for next chunk
+            fast_action_bar.stretch_to_fit_width(CHUNK_WIDTH)
+            fast_action_bar.move_to([CHUNK_WIDTH / 2, ACTION_Y, 0])
+            
+            # Swap video predictions - old one is faded out, new one continues
+            self.remove(loop_video_prediction)
+            new_video_prediction.clear_updaters()
+            new_video_prediction.set_fill(opacity=0.25)
+            new_video_prediction.set_stroke(opacity=1)
+            # Don't reset position - it should continue from where it slid to
+            loop_video_prediction = new_video_prediction
+            
+            # Reset chunk markers (shift back by one chunk)
+            loop_chunk_markers.shift([CHUNK_WIDTH, 0, 0])
         
-        # self.wait(1)
+        self.wait(1)
 
 
 # =============================================================================
