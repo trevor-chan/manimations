@@ -8,6 +8,16 @@ Uses camera panning/zooming to reveal each circle at the same apparent size.
 from manim import *
 import math
 from matplotlib import font_manager
+import sys
+from pathlib import Path
+
+# Add parent directory to path for colors import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from colors import (
+    RHODA_ORANGE, RHODA_BLUE, RHODA_BLUE_LIGHT,
+    BG_OFFWHITE, TEXT_DARK, MARKER_GRAY,
+    get_gradient_color, GRADIENT_SIMPLE
+)
 
 def get_preferred_font():
     """Return 'Open Sans' if available, otherwise 'Arial'."""
@@ -27,6 +37,9 @@ config.frame_height = 8
 
 class DataCirclesFigure(MovingCameraScene):
     def construct(self):
+        # Set background
+        self.camera.background_color = BG_OFFWHITE
+        
         # Data: (name, hours)
         data = [
             ("OXE", 4000),
@@ -43,12 +56,14 @@ class DataCirclesFigure(MovingCameraScene):
         labels = []
         radii = []
         
-        for name, hours in data:
+        for i, (name, hours) in enumerate(data):
             radius = math.sqrt(hours) * scale_factor
             radii.append(radius)
             circle = Circle(radius=radius)
-            circle.set_fill(WHITE, opacity=0.8)
-            circle.set_stroke(WHITE, width=1)  # Border for DrawBorderThenFill (same as baseline)
+            # Use gradient color based on position (orange → blue)
+            circle_color = get_gradient_color(i / (len(data) - 1), GRADIENT_SIMPLE)
+            circle.set_fill(circle_color, opacity=0.85)
+            circle.set_stroke(circle_color, width=1)  # Border for DrawBorderThenFill
             circles.append(circle)
             
             # Create label with name and hours
@@ -61,11 +76,11 @@ class DataCirclesFigure(MovingCameraScene):
             sans_font = get_preferred_font()
             if name == r"\pi_0":
                 # Use Text with Unicode pi for consistent sans-serif styling
-                name_label = Text("π₀", font=sans_font, font_size=36, weight=SEMIBOLD)
+                name_label = Text("π₀", font=sans_font, font_size=36, weight=SEMIBOLD, color=TEXT_DARK)
             else:
-                name_label = Text(name, font=sans_font, font_size=28, weight=SEMIBOLD)
+                name_label = Text(name, font=sans_font, font_size=28, weight=SEMIBOLD, color=TEXT_DARK)
             
-            hours_label = Text(hours_str, font=sans_font, font_size=20)
+            hours_label = Text(hours_str, font=sans_font, font_size=20, color=TEXT_DARK)
             
             label_group = VGroup(name_label, hours_label).arrange(DOWN, buff=0.1)
             labels.append(label_group)
@@ -105,7 +120,7 @@ class DataCirclesFigure(MovingCameraScene):
         baseline = Line(
             start=[-50, baseline_y - baseline_line_offset, 0],
             end=[50, baseline_y - baseline_line_offset, 0],
-            color=WHITE,
+            color=MARKER_GRAY,
             stroke_width=baseline_stroke_width
         )
         
@@ -138,7 +153,7 @@ class DataCirclesFigure(MovingCameraScene):
             connector_line = Line(
                 start=[circle.get_center()[0], label.get_bottom()[1] - gap, 0],
                 end=[circle.get_center()[0], circle.get_top()[1] + gap, 0],
-                color=WHITE,
+                color=MARKER_GRAY,
                 stroke_width=line_weight
             )
             return label, connector_line
@@ -272,6 +287,9 @@ class DataCirclesFigureStatic(Scene):
     """Static version showing all circles at once (original version)."""
     
     def construct(self):
+        # Set background
+        self.camera.background_color = BG_OFFWHITE
+        
         # Data: (name, hours)
         data = [
             ("OXE", 4000),
@@ -286,12 +304,14 @@ class DataCirclesFigureStatic(Scene):
         labels = []
         radii = []
         
-        for name, hours in data:
+        for i, (name, hours) in enumerate(data):
             radius = math.sqrt(hours) * scale_factor
             radii.append(radius)
             circle = Circle(radius=radius)
-            circle.set_fill(WHITE, opacity=0.8)
-            circle.set_stroke(WHITE, width=1)  # Border for DrawBorderThenFill (same as baseline)
+            # Use gradient color based on position (orange → blue)
+            circle_color = get_gradient_color(i / (len(data) - 1), GRADIENT_SIMPLE)
+            circle.set_fill(circle_color, opacity=0.85)
+            circle.set_stroke(circle_color, width=1)  # Border for DrawBorderThenFill
             circles.append(circle)
             
             if hours >= 1000:
@@ -302,11 +322,11 @@ class DataCirclesFigureStatic(Scene):
             # Use sans-serif font for all text
             sans_font = get_preferred_font()
             if name == r"\pi_0":
-                name_label = Text("π₀", font=sans_font, font_size=36)
+                name_label = Text("π₀", font=sans_font, font_size=36, color=TEXT_DARK)
             else:
-                name_label = Text(name, font=sans_font, font_size=28)
+                name_label = Text(name, font=sans_font, font_size=28, color=TEXT_DARK)
             
-            hours_label = Text(hours_str, font=sans_font, font_size=20)
+            hours_label = Text(hours_str, font=sans_font, font_size=20, color=TEXT_DARK)
             
             label_group = VGroup(name_label, hours_label).arrange(DOWN, buff=0.1)
             labels.append(label_group)
@@ -336,7 +356,7 @@ class DataCirclesFigureStatic(Scene):
         baseline = Line(
             start=[-10, baseline_y - baseline_line_offset, 0],
             end=[15, baseline_y - baseline_line_offset, 0],
-            color=WHITE,
+            color=MARKER_GRAY,
             stroke_width=baseline_stroke_width
         )
         
@@ -349,7 +369,7 @@ class DataCirclesFigureStatic(Scene):
             dashed_line = DashedLine(
                 start=[circle.get_center()[0], label_y - 0.6, 0],
                 end=[circle.get_center()[0], circle.get_top()[1] + 0.1, 0],
-                color=WHITE,
+                color=MARKER_GRAY,
                 stroke_width=1,
                 dash_length=0.1
             )

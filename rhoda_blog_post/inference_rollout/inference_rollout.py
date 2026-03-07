@@ -8,6 +8,18 @@ Shows the flow and timing of a two-stage robotics model:
 
 from manim import *
 import math
+import sys
+from pathlib import Path
+
+# Add parent directory to path for colors import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from colors import (
+    RHODA_ORANGE, RHODA_BLUE, RHODA_BLUE_LIGHT,
+    BG_OFFWHITE, BG_DARK, TEXT_DARK, MARKER_GRAY,
+    VISION_COLOR as _VISION_COLOR, 
+    ACTION_COLOR as _ACTION_COLOR,
+    TIMEBAR_COLOR as _TIMEBAR_COLOR
+)
 
 # =============================================================================
 # CONFIGURATION
@@ -71,12 +83,12 @@ VISION_HISTORY_Y = (_vision_history_top + _vision_history_bottom) / 2 + _center_
 CHUNK_MARKER_TOP = _video_model_top + _center_offset + MARKER_MARGIN
 CHUNK_MARKER_BOTTOM = _vision_history_bottom + _center_offset - MARKER_MARGIN
 
-# Colors (all white for now - will be revised later)
-VISION_COLOR = WHITE
-ACTION_COLOR = WHITE
-TIMEBAR_COLOR = WHITE
-MARKER_COLOR = "#444444"      # Slightly lighter gray for chunk markers
-BG_COLOR = BLACK              # Black background
+# Colors (using unified color palette from colors.py)
+VISION_COLOR = _VISION_COLOR   # Blue for vision/video elements
+ACTION_COLOR = _ACTION_COLOR   # Orange for action elements
+TIMEBAR_COLOR = _TIMEBAR_COLOR # Dark for timebar
+MARKER_COLOR = MARKER_GRAY     # Gray for chunk markers
+BG_COLOR = BG_OFFWHITE         # Light background
 
 # Hatching
 HATCH_SPACING = 0.25          # Spacing between diagonal hatch lines
