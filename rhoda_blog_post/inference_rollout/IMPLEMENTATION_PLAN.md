@@ -1,259 +1,233 @@
-# Inference Rollout Animation - Implementation Plan
+# Inference Rollout Animation - Implementation Guide
 
 ## Overview
 
 This animation depicts closed-loop inference timing for a two-stage robotics model:
-1. **Video Model**: Takes vision history → outputs 3-chunk video prediction
-2. **Action Model**: Takes video prediction → outputs 1-chunk actions
+1. **Video Model** (75% of chunk): Takes vision history → outputs 3-chunk video prediction
+2. **Action Model** (25% of chunk): Takes video prediction → outputs 8 action chips (1 chunk total)
 
-The key visual concept: **time flows right-to-left** (elements slide left as time progresses), while the **timebar stays fixed** at center.
+The key visual concept: **time flows right-to-left** (elements slide left as time progresses), while the **timebar stays fixed** at x=0.
 
 ---
 
 ## Visual Elements
 
-### Layer 1: Timeline Infrastructure (Static)
+### Timeline Infrastructure (Static)
 | Element | Description | Style |
 |---------|-------------|-------|
-| **TimeBar** | Vertical line at center marking "now" | Blue, with triangle marker at top |
-| **ChunkMarkers** | Vertical lines dividing time into chunks | Light gray, evenly spaced |
-| **TimeAxis** | Horizontal baseline | Thin gray line |
+| **TimeBar** | Vertical line at x=0 marking "now" | Dark gray, with triangle marker at top, z-index=100 |
+| **ChunkMarkers** | Vertical lines dividing time into chunks | Gray, stroke_width=2 |
 
-### Layer 2: Model Indicators (Move with time)
+### Model Indicators (Slide with time)
 | Element | Description | Style |
 |---------|-------------|-------|
-| **VideoModel** | 3-chunk wide box showing when video model runs | Purple outlined, rounded corners |
-| **ActionModel** | 1-chunk wide box showing when action model runs | Yellow/orange outlined, rounded corners |
+| **ModelContainer** | Rounded rectangle encompassing both models | Light gray fill (#E8E8E8), matches model bounds |
+| **VideoModel** | 75% chunk width box | Blue outlined, rounded corners (0.12 radius) |
+| **ActionModel** | 25% chunk width box | Orange outlined, rounded corners |
 
-### Layer 3: Data Blocks (Move with time)
+### Data Blocks (Slide with time)
 | Element | Description | Style |
 |---------|-------------|-------|
-| **VisionHistory** | Past video frames fed to model | Solid purple fill |
-| **VideoPrediction** | 3-chunk predicted future video | Purple hatched/striped |
-| **ActionChunk** | 1-chunk of predicted actions | Yellow hatched/striped |
+| **VisionHistory** | Past video frames | Solid blue fill, no border, opacity=1.0 |
+| **VideoPrediction** | 3-chunk predicted future | Blue, fill_opacity=0.25, stroke_opacity=1.0 |
+| **ActionChips** | 8 small action segments | Orange, fill_opacity=0.25, each 1/8 chunk wide |
 
 ---
 
-## Coordinate System
+## Vertical Layout
+
+All Y positions are computed with consistent `VERTICAL_GAP = 0.15`:
 
 ```
-Time (chunks):  ... -3  -2  -1   0   1   2   3  ...
-                          ↑
-                       TimeBar (x=0, always)
-
-Vertical layers:
-  y = 2.0   Video Prediction track
-  y = 1.0   Model indicators track  
-  y = 0.0   TimeAxis
-  y = -1.0  Vision History track
-  y = -2.0  Action output track
+CHUNK_MARKER_TOP ──────────────────────────────
+                    (gap)
+VIDEO_MODEL_Y       ████ Video Model ████
+                    (gap)  
+VIDEO_PRED_Y        ░░░░ Video Prediction ░░░░
+                    (gap)
+ACTION_MODEL_Y      ████ Action Model ████
+                    (gap)
+ACTION_Y            ░░░░ Action Chips ░░░░
+                    (gap)
+VISION_HISTORY_Y    ████ Vision History ████
+                    (gap)
+CHUNK_MARKER_BOTTOM ───────────────────────────
 ```
 
-### Key Formula
+---
+
+## Color Palette
+
+Colors are imported from `../colors.py`:
+
+| Constant | Hex | Usage |
+|----------|-----|-------|
+| `VISION_COLOR` | #A7D7E9 | Vision history, video model, video prediction |
+| `ACTION_COLOR` | #FC670F | Action model, action chips |
+| `TIMEBAR_COLOR` | #181C22 | Timebar |
+| `MARKER_COLOR` | #444444 | Chunk boundary lines |
+| `BG_COLOR` | #FAFAFA | Background (off-white) |
+| `FILL_LIGHT_GRAY` | #E8E8E8 | Model container fill |
+
+---
+
+## Animation Phases
+
+### Phase 1: Explanatory (with pauses)
+
+**Duration**: ~15 seconds
+
+1. **Fade In** (1s): All elements fade in from white
+2. **Keyframe 1**: Initial state - vision history extends to timebar
+3. **Keyframe 2**: Vision ghost animates into video model (scale + translate)
+4. **Keyframe 3**: 
+   - Timeline advances 75% of chunk (to video model completion)
+   - Video prediction ghost expands from video model
+   - Vision history grows with chip-based animation
+5. **Keyframe 4**: Video prediction ghost compresses into action model
+6. **Keyframe 5**:
+   - Timeline advances 25% of chunk (to action model completion)
+   - 8 action chips expand from action model
+   - Vision history continues growing
+
+Chip-based growth: Individual chips fade in at the leading edge, hold for 1 chip duration, then fade out as the solid history bar catches up.
+
+### Phase 2: Continuous Loop (slow speed)
+
+**Duration**: 4 iterations × ~0.9s each
+
+Smooth, linear time progression using `ValueTracker` with updaters:
+
+- **Timeline**: Progresses continuously at `rate_func=linear`
+- **Ghost animations**: Complete within 1/8 chunk duration
+- **Model crossfade**: Last 12.5% of chunk - old model fades out, new model fades in (both sliding)
+- **Video prediction**: Fades out over first 15%, new one fades in at 75%
+- **Action chips**: 8 chips, each fades out as its right edge crosses timebar
+- **Vision history**: Chips fade in, hold, fade out; solid bar grows with 1-chip lag
+
+**Soft Transition from Phase 1**: 
+- Non-model elements (history, predictions, chips, markers) are instantly removed and recreated at their current positions
+- Models crossfade to maintain visual continuity
+
+### Phase 3: Fast Loop (condensed model)
+
+**Duration**: 20 iterations × 0.45s each (~2 chunks/second)
+
+**Simplifications**:
+- No ghosting animations
+- No chip visualizations
+- No video prediction
+- Models condensed to single horizontal line
+
+**Condensed model transition**:
+- Video model slides down to center Y
+- Action model slides up to center Y  
+- Container shrinks to single MODEL_HEIGHT
+- Both models sit side-by-side on same row
+
+**Fast loop behavior**:
+- History bar fully caught up (right edge at x=0)
+- Action bar shrinks continuously (left edge at timebar, right edge at chunk boundary)
+- Simple model crossfade at chunk boundaries
+
+### Fade Out
+
+**Duration**: 4 chunks (~1.8s) + 1s wait
+
+After iteration 16 of Phase 3:
+- All elements continue sliding while fading out
+- Fill and stroke opacity fade proportionally (preserving ratios)
+- Final 1-second wait on white background
+
+---
+
+## Key Implementation Details
+
+### Custom Classes
+
+**`ModelIndicator(VGroup)`**: Rounded rectangle with optional label
+- `corner_radius = 0.12`
+- Stroke only, no fill
+
+**`ModelContainer(VGroup)`**: Encompasses both models
+- Dimensions calculated from VIDEO_MODEL_Y and ACTION_MODEL_Y
+- Fill color matches stroke (#E8E8E8)
+- z-index = -1 (renders behind models)
+
+### Time-to-Position Conversion
+
 ```python
 def time_to_x(time_in_chunks, current_time):
     """Convert absolute time to screen x-coordinate."""
     return (time_in_chunks - current_time) * CHUNK_WIDTH
 ```
 
-As `current_time` increases, all elements shift left.
-
----
-
-## Custom Classes Needed
-
-### 1. `HatchedRectangle(VGroup)`
-Creates a rectangle with diagonal line fill pattern.
+### Sliding via Updaters
 
 ```python
-class HatchedRectangle(VGroup):
-    def __init__(self, width, height, color, hatch_spacing=0.1, hatch_angle=45, **kwargs):
-        # Rectangle outline
-        # Diagonal lines clipped to rectangle bounds
+def make_continuous_slide_updater(initial_x, chunk_time_tracker):
+    def updater(mob):
+        t = chunk_time_tracker.get_value()
+        new_x = initial_x - t * CHUNK_WIDTH
+        mob.move_to([new_x, mob.get_center()[1], 0])
+    return updater
 ```
 
-### 2. `TimelineElement(VGroup)`
-Base class for elements that move with time.
+### Proportional Fade
 
 ```python
-class TimelineElement(VGroup):
-    def __init__(self, start_time, end_time, y_position, **kwargs):
-        self.start_time = start_time
-        self.end_time = end_time
-        self.y_position = y_position
-        
-    def update_position(self, current_time):
-        """Shift element based on current time."""
-        x = time_to_x(self.start_time, current_time)
-        self.move_to([x + self.width/2, self.y_position, 0])
-```
-
-### 3. `VisionHistory(TimelineElement)`
-Solid purple block representing history.
-
-```python
-class VisionHistory(TimelineElement):
-    def __init__(self, start_time, end_time, **kwargs):
-        # Solid purple rectangle
-        # end_time typically equals current_time
-```
-
-### 4. `VideoPrediction(TimelineElement)`
-Hatched purple block (3 chunks).
-
-```python
-class VideoPrediction(TimelineElement):
-    def __init__(self, start_time, **kwargs):
-        # Uses HatchedRectangle
-        # Width = 3 * CHUNK_WIDTH
-```
-
-### 5. `ActionChunk(TimelineElement)`
-Hatched yellow block (1 chunk).
-
-```python
-class ActionChunk(TimelineElement):
-    def __init__(self, start_time, **kwargs):
-        # Uses HatchedRectangle  
-        # Width = 1 * CHUNK_WIDTH
-```
-
-### 6. `ModelIndicator(VGroup)`
-Outlined box showing model computation period.
-
-```python
-class ModelIndicator(VGroup):
-    def __init__(self, width_chunks, color, label=None, **kwargs):
-        # Rounded rectangle, stroke only (no fill)
+def make_fade_updater(mob):
+    initial_fill = mob.get_fill_opacity()
+    initial_stroke = mob.get_stroke_opacity()
+    def updater(m):
+        t = fade_tracker.get_value()
+        m.set_fill(opacity=initial_fill * (1 - t))
+        m.set_stroke(opacity=initial_stroke * (1 - t))
+    return updater
 ```
 
 ---
 
-## Animation Sequence
-
-### Phase 0: Setup (t=0)
-```
-- Add TimeBar (static at x=0)
-- Add ChunkMarkers
-- Add TimeAxis
-- Add VisionHistory (extends from past to timebar)
-- Add VideoModel indicator (positioned for current chunk)
-- Add ActionModel indicator (to the right of VideoModel)
-```
-
-### Phase 1: Vision → Video Model (Keyframes 1→2)
-**Duration**: ~1 chunk of time
-
-1. **Time progresses**: All elements slide left via updaters
-2. **Vision flows into model**: 
-   - Copy of vision history right edge
-   - Animate: scale down + translate up-right + fade
-   - Target: VideoModel indicator
+## Key Constants
 
 ```python
-# Pseudo-animation
-self.play(
-    time_tracker.animate.increment_value(1),  # Everything shifts
-    vision_copy.animate.scale(0.3).move_to(video_model).fade(),
-    run_time=CHUNK_DURATION
-)
-```
+# Dimensions
+CHUNK_WIDTH = 1.5           # World units per chunk
+TRACK_HEIGHT = 0.4          # Height of data blocks
+MODEL_HEIGHT = 0.5          # Height of model indicators
+VERTICAL_GAP = 0.15         # Gap between vertical elements
 
-### Phase 2: Video Prediction Appears (Keyframe 3)
-**Duration**: Brief
+# Model timing (within a chunk)
+VIDEO_MODEL_FRAC = 0.75     # Video model takes 75% of chunk
+ACTION_MODEL_FRAC = 0.25    # Action model takes 25% of chunk
 
-1. **VideoPrediction** fades in at correct position
-2. Starts at `current_time` and extends 3 chunks into future
+# Action chips
+NUM_ACTION_CHIPS = 8        # 8 action chips per chunk
+CHIP_WIDTH = CHUNK_WIDTH / NUM_ACTION_CHIPS
 
-```python
-video_pred = VideoPrediction(start_time=current_time)
-self.play(FadeIn(video_pred))
-```
+# Animation timing
+EXPLANATORY_CHUNK_TIME = 2.0    # Seconds per chunk (Phase 1)
+SLOW_CHUNK_TIME = 0.9           # Seconds per chunk (Phase 2)
+FAST_CHUNK_TIME = 0.45          # Seconds per chunk (Phase 3)
 
-### Phase 3: Video → Action Model (Keyframes 3→4)
-**Duration**: Brief
-
-1. **Video prediction flows into ActionModel**:
-   - Copy portion of video prediction
-   - Animate: translate down to action model indicator
-
-### Phase 4: Action Chunk Appears (Keyframe 5)
-**Duration**: Brief
-
-1. **ActionChunk** fades in
-2. Positioned for next chunk (chunk 1-2 relative to when computation started)
-
-### Phase 5: Chunk Transition (Keyframe 6)
-**Duration**: ~1 chunk
-
-1. **Time progresses** another chunk
-2. All elements slide left
-3. Previous elements shift/fade as needed
-4. New vision history extends to new "now"
-
-### Phase 6: Actions → Vision History (Keyframe 7)
-**Duration**: Continuous during inference
-
-1. **Incremental conversion**: Every 1/8 chunk:
-   - Small piece of ActionChunk fades out
-   - Corresponding piece appears as VisionHistory extension
-
-```python
-# Using updater or stepped animation
-for i in range(8):
-    action_slice = action_chunk.get_slice(i)
-    vision_extension = create_vision_slice(action_slice.position)
-    self.play(
-        FadeOut(action_slice),
-        FadeIn(vision_extension),
-        run_time=CHUNK_DURATION/8
-    )
+# Ghost animation
+GHOST_DURATION_FRAC = 1/8   # Ghosts complete in 1/8 of chunk
 ```
 
 ---
 
-## Key Technical Challenges
+## Render Commands
 
-### 1. Smooth Time Progression
-Use `ValueTracker` + updaters:
+```bash
+# Preview (low quality, fast)
+manim -pql inference_rollout.py InferenceRollout
 
-```python
-time_tracker = ValueTracker(0)
+# High quality
+manim -pqh inference_rollout.py InferenceRollout
 
-def update_element(mob):
-    current_time = time_tracker.get_value()
-    x = time_to_x(mob.start_time, current_time)
-    mob.move_to([x + mob.width/2, mob.y_position, 0])
-
-element.add_updater(update_element)
+# 4K
+manim -pqk inference_rollout.py InferenceRollout
 ```
-
-### 2. Hatched Fill Pattern
-Option A: Diagonal lines clipped with `intersection`:
-```python
-lines = VGroup(*[Line(...) for angle in range(n)])
-hatched = Intersection(rect, lines)
-```
-
-Option B: Use SVG pattern (more complex)
-
-Option C: Many thin rectangles at angle (simpler):
-```python
-for i in range(n_lines):
-    line = Line(start, end, stroke_width=1)
-    line.rotate(45*DEGREES)
-```
-
-### 3. Element Lifecycle Management
-Elements need to be created/destroyed as they enter/exit view:
-- Create elements when they're about to enter frame
-- Remove elements when they exit left side of frame
-- Use `always_redraw` or careful updater management
-
-### 4. Looping Animation
-For seamless looping:
-- End state should match start state (offset by N chunks)
-- Fade out/in at loop point
 
 ---
 
@@ -261,90 +235,11 @@ For seamless looping:
 
 ```
 inference_rollout/
-├── inference_rollout.py      # Main animation
-├── timeline_elements.py      # Custom Mobject classes
-├── constants.py              # Timing, colors, dimensions
-├── README.md                 # Documentation
+├── inference_rollout.py      # Main animation (single file)
+├── IMPLEMENTATION_PLAN.md    # This document
+├── media/                    # Output directory
 └── sketch_frames/            # Reference images
-    ├── 1.jpg ... 7.jpg
+    └── 1.jpg ... 7.jpg
+
+../colors.py                  # Shared color palette
 ```
-
----
-
-## Constants to Define
-
-```python
-# Timing
-CHUNK_DURATION = 1.0          # Seconds per chunk in animation
-VIDEO_MODEL_CHUNKS = 1        # How long video model takes
-ACTION_MODEL_CHUNKS = 0.5     # How long action model takes
-
-# Dimensions  
-CHUNK_WIDTH = 1.5             # World units per chunk
-TRACK_HEIGHT = 0.6            # Height of data blocks
-TRACK_SPACING = 1.2           # Vertical spacing between tracks
-
-# Colors
-VISION_COLOR = "#9B7BB8"      # Purple
-VIDEO_PRED_COLOR = "#9B7BB8"  # Purple (hatched)
-ACTION_COLOR = "#F5A623"      # Yellow/orange
-TIMEBAR_COLOR = "#4A90D9"     # Blue
-
-# Hatching
-HATCH_SPACING = 0.15
-HATCH_ANGLE = 45 * DEGREES
-```
-
----
-
-## Suggested Implementation Order
-
-1. **Constants & Utilities** (`constants.py`)
-   - Define all constants
-   - `time_to_x()` function
-
-2. **Basic Elements** (`timeline_elements.py`)
-   - `HatchedRectangle` 
-   - `TimelineElement` base class
-   - `VisionHistory`
-   - `ModelIndicator`
-
-3. **Static Scene Test**
-   - Render keyframe 1 as static image
-   - Verify positioning and styling
-
-4. **Time Progression**
-   - Add `ValueTracker`
-   - Add updaters to elements
-   - Test smooth sliding
-
-5. **Flow Animations**
-   - Vision → VideoModel flow effect
-   - VideoPrediction → ActionModel flow effect
-
-6. **Output Elements**
-   - `VideoPrediction` appearance
-   - `ActionChunk` appearance
-
-7. **Full Cycle**
-   - Chain all phases together
-   - Add chunk transition
-
-8. **Action→Vision Conversion**
-   - Incremental slice conversion
-   - Smooth visual effect
-
-9. **Polish**
-   - Timing adjustments
-   - Easing curves
-   - Loop preparation
-
----
-
-## Questions to Resolve
-
-1. **How many chunks of history to show?** (Looks like ~4 in sketches)
-2. **Should models slide left too, or stay fixed?** (Sketches show them moving)
-3. **Exact timing**: How long does each model computation take in real time vs animation time?
-4. **Loop point**: After how many chunks should animation loop?
-5. **Labels**: Should models be labeled with text?
