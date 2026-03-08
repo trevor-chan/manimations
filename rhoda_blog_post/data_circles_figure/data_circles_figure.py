@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from colors import (
     RHODA_ORANGE, RHODA_BLUE, RHODA_BLUE_LIGHT,
-    BG_OFFWHITE, TEXT_DARK, MARKER_GRAY,
+    BG_OFFWHITE, TEXT_DARK, MARKER_GRAY, ACTION_COLOR,
     get_gradient_color, GRADIENT_SIMPLE
 )
 
@@ -29,8 +29,8 @@ def get_preferred_font():
     return "Arial"
 
 # Configure 2:1 aspect ratio
-config.pixel_width = 1920
-config.pixel_height = 960
+config.pixel_width = 3840
+config.pixel_height = 1920
 config.frame_width = 16
 config.frame_height = 8
 
@@ -60,10 +60,12 @@ class DataCirclesFigure(MovingCameraScene):
             radius = math.sqrt(hours) * scale_factor
             radii.append(radius)
             circle = Circle(radius=radius)
-            # Use gradient color based on position (orange → blue)
-            circle_color = get_gradient_color(i / (len(data) - 1), GRADIENT_SIMPLE)
-            circle.set_fill(circle_color, opacity=0.85)
-            circle.set_stroke(circle_color, width=1)  # Border for DrawBorderThenFill
+            # Gradient fill within circle: orange → blue → white (diagonal)
+            circle.set_fill(color=[RHODA_ORANGE, RHODA_BLUE, "#FFFFFF"], opacity=0.85)
+            circle.set_sheen_direction(UR)  # Diagonal gradient direction
+            # Use same color as baseline; Rhoda (last) gets thinner stroke
+            stroke_width = 0.5 if i == len(data) - 1 else 1
+            circle.set_stroke(color=MARKER_GRAY, width=stroke_width, opacity=1)
             circles.append(circle)
             
             # Create label with name and hours
@@ -80,7 +82,7 @@ class DataCirclesFigure(MovingCameraScene):
             else:
                 name_label = Text(name, font=sans_font, font_size=28, weight=SEMIBOLD, color=TEXT_DARK)
             
-            hours_label = Text(hours_str, font=sans_font, font_size=20, color=TEXT_DARK)
+            hours_label = Text(hours_str, font=sans_font, font_size=20, color=ACTION_COLOR)
             
             label_group = VGroup(name_label, hours_label).arrange(DOWN, buff=0.1)
             labels.append(label_group)
@@ -95,7 +97,7 @@ class DataCirclesFigure(MovingCameraScene):
         x_positions = []
         
         # Gap multipliers for each transition (smaller = tighter, negative = overlap)
-        gap_multipliers = [0.8, 0.1, -0.45]  # OXE→pi_0, pi_0→GEN-0, GEN-0→Rhoda (significant overlap!)
+        gap_multipliers = [0.8, 0.1, -0.50]  # OXE→pi_0, pi_0→GEN-0, GEN-0→Rhoda (significant overlap!)
         
         for i, radius in enumerate(radii):
             if i == 0:
@@ -308,10 +310,10 @@ class DataCirclesFigureStatic(Scene):
             radius = math.sqrt(hours) * scale_factor
             radii.append(radius)
             circle = Circle(radius=radius)
-            # Use gradient color based on position (orange → blue)
-            circle_color = get_gradient_color(i / (len(data) - 1), GRADIENT_SIMPLE)
-            circle.set_fill(circle_color, opacity=0.85)
-            circle.set_stroke(circle_color, width=1)  # Border for DrawBorderThenFill
+            # Gradient fill within circle: orange → blue → white (diagonal)
+            circle.set_fill(color=[RHODA_ORANGE, RHODA_BLUE, "#FFFFFF"], opacity=0.85)
+            circle.set_sheen_direction(UR)  # Diagonal gradient direction
+            circle.set_stroke(color=TEXT_DARK, width=2, opacity=1)  # Consistent dark border
             circles.append(circle)
             
             if hours >= 1000:
@@ -326,7 +328,7 @@ class DataCirclesFigureStatic(Scene):
             else:
                 name_label = Text(name, font=sans_font, font_size=28, color=TEXT_DARK)
             
-            hours_label = Text(hours_str, font=sans_font, font_size=20, color=TEXT_DARK)
+            hours_label = Text(hours_str, font=sans_font, font_size=20, color=ACTION_COLOR)
             
             label_group = VGroup(name_label, hours_label).arrange(DOWN, buff=0.1)
             labels.append(label_group)

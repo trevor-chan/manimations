@@ -17,9 +17,12 @@ RHODA_ORANGE_LIGHT = "#FD8A44"     # Lighter orange
 RHODA_ORANGE_DARK = "#D95500"      # Deeper orange
 
 # Cool end (Light Blue)  
-RHODA_BLUE = "#A7D7E9"             # Primary light blue (brand color)
-RHODA_BLUE_LIGHT = "#C5E5F0"       # Lighter blue
-RHODA_BLUE_DARK = "#7DC4DD"        # Deeper blue
+# RHODA_BLUE = "#A7D7E9"             # Primary light blue (brand color)
+# RHODA_BLUE_LIGHT = "#C5E5F0"       # Lighter blue
+# RHODA_BLUE_DARK = "#7DC4DD"        # Deeper blue
+RHODA_BLUE = "##8ab9ff"
+RHODA_BLUE_LIGHT = "#b3d2ff"
+RHODA_BLUE_DARK = "#66a6ff"
 
 # Gradient midpoints (interpolated between brand colors)
 RHODA_PEACH = "#FDB77C"            # Warm transition (orange → neutral)
