@@ -752,262 +752,190 @@ class OverviewDiagram(Scene):
             action_model_group,
         )
         
-        # Wait a moment for rendering
-        self.wait(1)
-        
         # =====================================================================
-        # ANIMATION CYCLE
+        # ANIMATION CYCLE - Top and Bottom loops run in parallel
         # =====================================================================
         
+        # Both loops take exactly the same time
+        CYCLE_TIME = 2.5  # seconds per full cycle
+        
+        # Store model centers
+        video_model_center = video_model.get_center()
+        action_model_center = action_model.get_center()
+        
+        # Final destination for bottom loop path
+        rightmost_x = video_context_cache.slot_positions[4]
+        final_vc_position = np.array([rightmost_x, chunk_y, 0])
+        
+        # Colors for bottom loop interpolation
+        start_color = ManimColor(GENERATED_ACTIONS_STROKE)
+        end_color = ManimColor(VIDEO_CONTEXT_STROKE)
+        
+        # Phase timing within top loop (as fractions of CYCLE_TIME)
+        PHASE1_FRAC = 0.30  # Context ghosts → video model + cache shuffle
+        PHASE2_FRAC = 0.20  # Predicted video emerges
+        PHASE3_FRAC = 0.30  # PV ghosts → action model
+        PHASE4_FRAC = 0.20  # Generated action emerges
+        
         # -----------------------------------------------------------------
-        # Step 1+2: Video context ghosts → Video Model → Predicted Video
-        #           (all concurrent with cache shuffle)
+        # Build the bottom loop path (reusable)
+        # -----------------------------------------------------------------
+        def build_bottom_loop_path():
+            path = VMobject()
+            path.set_points_as_corners([
+                np.array([ga_final_position[0], MAIN_Y, 0]),
+                np.array([box_right_x, MAIN_Y, 0]),
+                np.array([loop_right_x + corner_radius, MAIN_Y, 0]),
+            ])
+            
+            c1 = Arc(radius=corner_radius, start_angle=PI/2, angle=-PI/2)
+            c1.move_arc_center_to(np.array([loop_right_x + corner_radius, MAIN_Y - corner_radius, 0]))
+            path.append_vectorized_mobject(c1)
+            
+            path.add_line_to(np.array([loop_right_x + 2*corner_radius, loop_bottom_y + corner_radius, 0]))
+            
+            c2 = Arc(radius=corner_radius, start_angle=0, angle=-PI/2)
+            c2.move_arc_center_to(np.array([loop_right_x + corner_radius, loop_bottom_y + corner_radius, 0]))
+            path.append_vectorized_mobject(c2)
+            
+            path.add_line_to(np.array([loop_left_x - corner_radius, loop_bottom_y, 0]))
+            
+            c3 = Arc(radius=corner_radius, start_angle=-PI/2, angle=-PI/2)
+            c3.move_arc_center_to(np.array([loop_left_x - corner_radius, loop_bottom_y + corner_radius, 0]))
+            path.append_vectorized_mobject(c3)
+            
+            path.add_line_to(np.array([loop_left_x - 2*corner_radius, MAIN_Y - corner_radius, 0]))
+            
+            c4 = Arc(radius=corner_radius, start_angle=PI, angle=-PI/2)
+            c4.move_arc_center_to(np.array([loop_left_x - corner_radius, MAIN_Y - corner_radius, 0]))
+            path.append_vectorized_mobject(c4)
+            
+            path.add_line_to(np.array([box_left_x, MAIN_Y, 0]))
+            path.add_line_to(final_vc_position)
+            
+            return path
+        
+        # -----------------------------------------------------------------
+        # SINGLE CYCLE - Multiple self.play() with bottom loop via updater
         # -----------------------------------------------------------------
         
-        # Create ghost copies of visible video context chunks BEFORE shuffling
+        # Calculate phase times
+        p1_time = PHASE1_FRAC * CYCLE_TIME
+        p2_time = PHASE2_FRAC * CYCLE_TIME
+        p3_time = PHASE3_FRAC * CYCLE_TIME
+        p4_time = PHASE4_FRAC * CYCLE_TIME
+        
+        # --- SETUP BOTTOM LOOP CHUNK ---
+        bottom_chunk = DataChunk(GENERATED_ACTIONS_STROKE)
+        bottom_chunk.move_to(ga_final_position)
+        bottom_chunk.set_chunk_opacity(0.8)
+        self.add(bottom_chunk)
+        
+        bottom_path = build_bottom_loop_path()
+        
+        # Global progress tracker for bottom loop (0 to 1 over full cycle)
+        global_progress = ValueTracker(0)
+        
+        # Position updater - moves chunk along path based on progress
+        def position_updater(mob):
+            p = global_progress.get_value()
+            point = bottom_path.point_from_proportion(min(p, 1.0))
+            mob.move_to(point)
+        
+        # Color updater
+        def color_updater(mob):
+            p = global_progress.get_value()
+            new_color = interpolate_color(start_color, end_color, p)
+            mob.rect.set_stroke(color=new_color)
+            mob.rect.set_fill(color=new_color)
+            mob.set_chunk_opacity(0.8 + 0.2 * p)
+        
+        bottom_chunk.add_updater(position_updater)
+        bottom_chunk.add_updater(color_updater)
+        
+        # --- SETUP TOP LOOP ELEMENTS ---
+        
+        # Context ghosts for phase 1
         visible_chunks = video_context_cache.get_visible_chunks()
-        ghosts = VGroup()
+        context_ghosts = VGroup()
         for chunk in visible_chunks:
             ghost = chunk.copy()
-            ghost.set_chunk_opacity(0.6)  # Semi-transparent ghost
-            ghosts.add(ghost)
-        self.add(ghosts)
+            ghost.set_chunk_opacity(0.6)
+            context_ghosts.add(ghost)
+        self.add(context_ghosts)
         
-        # Target: center of video model
-        video_model_center = video_model.get_center()
-        
-        # Prepare predicted video chunks at video model position, scaled down
+        # Prepare pv_chunks at video model (scaled down, invisible)
         for i, pv_chunk in enumerate(pv_chunks):
             pv_chunk.move_to(video_model_center)
             pv_chunk.scale(0.3)
             pv_chunk.set_chunk_opacity(0)
         
-        # Build ghost animations (converging into video model) - 0.5s
-        ghost_anims = []
-        for ghost in ghosts:
-            ghost_anims.append(
-                ghost.animate
-                    .move_to(video_model_center)
-                    .scale(0.3)
-                    .set_chunk_opacity(0)
-            )
-        
-        # Build predicted video emerge animations - 0.5s
-        pv_emerge_anims = []
-        for i, pv_chunk in enumerate(pv_chunks):
-            pv_emerge_anims.append(
-                pv_chunk.animate
-                    .move_to(pv_final_positions[i])
-                    .scale(1/0.3)
-                    .set_chunk_opacity(1)
-            )
-        
-        # Get cache shuffle animations
-        fadeout_anim = video_context_cache.get_fadeout_animation()
-        shift_anims = video_context_cache.get_shift_animations()
-        
-        # Create the full video model sequence: ghosts in → predictions out
-        video_model_sequence = Succession(
-            AnimationGroup(*ghost_anims, run_time=0.5),
-            AnimationGroup(*pv_emerge_anims, run_time=0.5),
-        )
-        
-        # Create cache shuffle sequence: fadeout → shift
-        cache_shuffle_sequence = Succession(
-            fadeout_anim,
-            AnimationGroup(*shift_anims),
-        )
-        
-        # Play both sequences in parallel
-        self.play(
-            video_model_sequence,
-            cache_shuffle_sequence,
-            run_time=1.0
-        )
-        
-        # Finalize cache (don't add new chunk - we'll do that in step 4)
-        video_context_cache.finalize_cycle(self, add_new_chunk=False)
-        
-        # Remove ghosts
-        self.remove(ghosts)
-        
-        self.wait(0.15)
-        
-        # -----------------------------------------------------------------
-        # Step 3: Predicted Video ghosts → Action Model → Generated Action out
-        # -----------------------------------------------------------------
-        
-        # Create ghost copies of predicted video chunks
-        pv_ghosts = VGroup()
-        for pv_chunk in pv_chunks:
-            ghost = pv_chunk.copy()
-            ghost.set_chunk_opacity(0.6)  # Semi-transparent ghost
-            pv_ghosts.add(ghost)
-        self.add(pv_ghosts)
-        
-        # Target: center of action model
-        action_model_center = action_model.get_center()
-        
-        # Animate ghosts converging into action model (scale down, move, fade out)
-        # AND fade out original predicted video chunks
-        pv_ghost_anims = []
-        for ghost in pv_ghosts:
-            pv_ghost_anims.append(
-                ghost.animate
-                    .move_to(action_model_center)
-                    .scale(0.3)
-                    .set_chunk_opacity(0)
-            )
-        
-        # Fade out original pv_chunks as ghosts move
-        pv_fadeout_anims = [pv_chunk.animate.set_chunk_opacity(0) for pv_chunk in pv_chunks]
-        
-        self.play(*pv_ghost_anims, *pv_fadeout_anims, run_time=0.5)
-        
-        # Remove ghosts and faded-out originals
-        self.remove(pv_ghosts)
-        self.remove(*pv_chunks)
-        
-        self.wait(0.1)
-        
-        # Generated action chunk emerges from action model
-        # Start it at action model position, scaled down
+        # Prepare ga_chunk at action model (scaled down, invisible)
         ga_chunk.move_to(action_model_center)
         ga_chunk.scale(0.3)
         ga_chunk.set_chunk_opacity(0)
         
-        # Animate it expanding to its final position
+        # --- PHASE 1: Context ghosts → Video Model ---
         self.play(
-            ga_chunk.animate
-                .move_to(ga_final_position)
-                .scale(1/0.3)
-                .set_chunk_opacity(1),
-            run_time=0.5
+            *[ghost.animate.move_to(video_model_center).scale(0.3).set_chunk_opacity(0)
+              for ghost in context_ghosts],
+            video_context_cache.get_fadeout_animation(),
+            *video_context_cache.get_shift_animations(),
+            global_progress.animate(rate_func=linear).set_value(PHASE1_FRAC),
+            run_time=p1_time
         )
+        video_context_cache.finalize_cycle(self, add_new_chunk=False)
+        self.remove(context_ghosts)
         
-        self.wait(0.15)
-        
-        # -----------------------------------------------------------------
-        # Step 4: Generated Action → Loop → Action Rollout → Video Context
-        # -----------------------------------------------------------------
-        
-        # Create ghost of generated action chunk to follow the loop
-        loop_chunk = ga_chunk.copy()
-        loop_chunk.set_chunk_opacity(0.8)
-        self.add(loop_chunk)
-        
-        # Fade out original ga_chunk immediately
-        self.play(ga_chunk.animate.set_chunk_opacity(0), run_time=0.15)
-        self.remove(ga_chunk)
-        
-        # Final destination for path: rightmost slot of video context cache
-        rightmost_x = video_context_cache.slot_positions[4]
-        final_vc_position = np.array([rightmost_x, chunk_y, 0])
-        
-        # Build FULL path from generated actions through loop to final cache position
-        full_loop_path = VMobject()
-        
-        # Start at generated actions center
-        full_loop_path.set_points_as_corners([
-            np.array([ga_final_position[0], MAIN_Y, 0]),
-            np.array([box_right_x, MAIN_Y, 0]),
-            np.array([loop_right_x + corner_radius, MAIN_Y, 0]),
-        ])
-        
-        # Add top-right corner arc
-        corner1_path = Arc(
-            radius=corner_radius,
-            start_angle=PI/2,
-            angle=-PI/2,
-        )
-        corner1_path.move_arc_center_to(np.array([loop_right_x + corner_radius, MAIN_Y - corner_radius, 0]))
-        full_loop_path.append_vectorized_mobject(corner1_path)
-        
-        # Vertical line down
-        full_loop_path.add_line_to(np.array([loop_right_x + 2*corner_radius, loop_bottom_y + corner_radius, 0]))
-        
-        # Add bottom-right corner arc
-        corner2_path = Arc(
-            radius=corner_radius,
-            start_angle=0,
-            angle=-PI/2,
-        )
-        corner2_path.move_arc_center_to(np.array([loop_right_x + corner_radius, loop_bottom_y + corner_radius, 0]))
-        full_loop_path.append_vectorized_mobject(corner2_path)
-        
-        # Horizontal line along bottom (through action rollout)
-        full_loop_path.add_line_to(np.array([loop_left_x - corner_radius, loop_bottom_y, 0]))
-        
-        # Add bottom-left corner arc
-        corner3_path = Arc(
-            radius=corner_radius,
-            start_angle=-PI/2,
-            angle=-PI/2,
-        )
-        corner3_path.move_arc_center_to(np.array([loop_left_x - corner_radius, loop_bottom_y + corner_radius, 0]))
-        full_loop_path.append_vectorized_mobject(corner3_path)
-        
-        # Vertical line up
-        full_loop_path.add_line_to(np.array([loop_left_x - 2*corner_radius, MAIN_Y - corner_radius, 0]))
-        
-        # Add top-left corner arc
-        corner4_path = Arc(
-            radius=corner_radius,
-            start_angle=PI,
-            angle=-PI/2,
-        )
-        corner4_path.move_arc_center_to(np.array([loop_left_x - corner_radius, MAIN_Y - corner_radius, 0]))
-        full_loop_path.append_vectorized_mobject(corner4_path)
-        
-        # Horizontal line into video context box
-        full_loop_path.add_line_to(np.array([box_left_x, MAIN_Y, 0]))
-        
-        # Continue to final cache position (up and right to chunk_y level)
-        full_loop_path.add_line_to(final_vc_position)
-        
-        # Get path length for color interpolation
-        path_length = full_loop_path.get_arc_length()
-        
-        # Colors for interpolation (blue to orange via a nicer path)
-        start_color = ManimColor(GENERATED_ACTIONS_STROKE)
-        end_color = ManimColor(VIDEO_CONTEXT_STROKE)
-        
-        # Create a ValueTracker to drive the animation progress
-        progress = ValueTracker(0)
-        
-        # Store initial position for path point calculation
-        def get_color_at_progress(p):
-            # Use interpolate_color for smooth transition
-            # Going through a slight desaturation in the middle can look nicer
-            return interpolate_color(start_color, end_color, p)
-        
-        # Add updater for smooth color transition
-        def color_updater(mob):
-            p = progress.get_value()
-            new_color = get_color_at_progress(p)
-            mob.rect.set_stroke(color=new_color)
-            mob.rect.set_fill(color=new_color)
-            # Fade to full opacity as we approach the end
-            opacity = 0.8 + 0.2 * p  # 0.8 -> 1.0
-            mob.set_chunk_opacity(opacity)
-        
-        loop_chunk.add_updater(color_updater)
-        
-        # Animate chunk following full path with color transition
-        # Timing balanced with upper path (steps 1-3): ~2.8s total
+        # --- PHASE 2: Predicted Video emerges ---
         self.play(
-            MoveAlongPath(loop_chunk, full_loop_path, rate_func=linear),
-            progress.animate.set_value(1),
-            run_time=2.8
+            *[pv_chunk.animate.move_to(pv_final_positions[i]).scale(1/0.3).set_chunk_opacity(1)
+              for i, pv_chunk in enumerate(pv_chunks)],
+            global_progress.animate(rate_func=linear).set_value(PHASE1_FRAC + PHASE2_FRAC),
+            run_time=p2_time
         )
         
-        loop_chunk.remove_updater(color_updater)
+        # --- PHASE 3: PV ghosts → Action Model ---
+        # Create ghosts as COPIES of the now-visible pv_chunks (same opacity for seamless transition)
+        pv_ghosts = VGroup()
+        for pv_chunk in pv_chunks:
+            ghost = pv_chunk.copy()
+            ghost.set_chunk_opacity(1.0)  # Match the original's opacity
+            pv_ghosts.add(ghost)
+        self.add(pv_ghosts)
         
-        # Add the chunk to the video context cache
-        video_context_cache.chunks.append(loop_chunk)
-        video_context_cache.add(loop_chunk)
+        # Instantly hide original pv_chunks (ghosts replace them visually)
+        for pv_chunk in pv_chunks:
+            pv_chunk.set_chunk_opacity(0)
+        self.remove(*pv_chunks)
         
-        self.wait(1)
+        # Ghosts move to action model, shrinking and fading
+        self.play(
+            *[ghost.animate.move_to(action_model_center).scale(0.3).set_chunk_opacity(0)
+              for ghost in pv_ghosts],
+            global_progress.animate(rate_func=linear).set_value(PHASE1_FRAC + PHASE2_FRAC + PHASE3_FRAC),
+            run_time=p3_time
+        )
+        self.remove(pv_ghosts)
+        
+        # --- PHASE 4: Generated Action emerges ---
+        self.play(
+            ga_chunk.animate.move_to(ga_final_position).scale(1/0.3).set_chunk_opacity(1),
+            global_progress.animate(rate_func=linear).set_value(1.0),
+            run_time=p4_time
+        )
+        
+        # --- CLEANUP ---
+        bottom_chunk.remove_updater(position_updater)
+        bottom_chunk.remove_updater(color_updater)
+        
+        # Add arrived bottom chunk to cache
+        video_context_cache.chunks.append(bottom_chunk)
+        video_context_cache.add(bottom_chunk)
+        
+        # Animation ends with ga_chunk at ga_final_position (same visual state as start)
+        # Video context cache has cycled (one removed left, one added right)
+        # This creates a seamless loop
 
 
 # =============================================================================
