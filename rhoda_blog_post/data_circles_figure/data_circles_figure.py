@@ -15,17 +15,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from colors import (
     RHODA_ORANGE, RHODA_BLUE, RHODA_BLUE_LIGHT,
-    BG_OFFWHITE, TEXT_DARK, MARKER_GRAY, ACTION_COLOR,
-    get_gradient_color, GRADIENT_SIMPLE
+    BG_WHITE, TEXT_DARK, MARKER_GRAY, ACTION_COLOR,
+    get_gradient_color, GRADIENT_SIMPLE,
 )
 
 def get_preferred_font():
     """Return 'Open Sans' if available, otherwise 'Arial'."""
     available_fonts = {f.name for f in font_manager.fontManager.ttflist}
     if "Open Sans" in available_fonts:
-        print("Using Open Sans")
         return "Open Sans"
-    print("Using Arial")
     return "Arial"
 
 # Configure 2:1 aspect ratio
@@ -38,13 +36,13 @@ config.frame_height = 8
 class DataCirclesFigure(MovingCameraScene):
     def construct(self):
         # Set background
-        self.camera.background_color = BG_OFFWHITE
+        self.camera.background_color = BG_WHITE
         
         # Data: (name, hours)
         data = [
             ("OXE", 4000),
-            (r"\pi_0", 10000),
-            ("GEN-0", 270000),
+            (r"\pi_0's dataset", 10000),
+            ("GEN-0's dataset", 270000),
             ("Rhoda", 20),
         ]
 
@@ -76,13 +74,17 @@ class DataCirclesFigure(MovingCameraScene):
             
             # Use sans-serif font for all text
             sans_font = get_preferred_font()
-            if name == r"\pi_0":
-                # Use Text with Unicode pi for consistent sans-serif styling
-                name_label = Text("π₀", font=sans_font, font_size=36, weight=SEMIBOLD, color=TEXT_DARK)
+            if name == r"\pi_0's dataset":
+                # Combine pi symbol with regular text for proper rendering
+                pi_part = Text("π₀", font=sans_font, font_size=96, weight=SEMIBOLD, color=TEXT_DARK)
+                text_part = Text("'s dataset", font=sans_font, font_size=96, weight=SEMIBOLD, color=TEXT_DARK)
+                name_label = VGroup(pi_part, text_part).arrange(RIGHT, buff=0.02).scale(28/96)
             else:
-                name_label = Text(name, font=sans_font, font_size=28, weight=SEMIBOLD, color=TEXT_DARK)
+                # Render at large size and scale down for better kerning
+                name_label = Text(name, font=sans_font, font_size=96, weight=SEMIBOLD, color=TEXT_DARK).scale(28/96)
             
-            hours_label = Text(hours_str, font=sans_font, font_size=20, color=ACTION_COLOR)
+            # Render at large size and scale down for better kerning
+            hours_label = Text(hours_str, font=sans_font, font_size=96, color=ACTION_COLOR).scale(20/96)
             
             label_group = VGroup(name_label, hours_label).arrange(DOWN, buff=0.1)
             labels.append(label_group)
@@ -177,6 +179,40 @@ class DataCirclesFigure(MovingCameraScene):
         
         self.camera.frame.set_height(initial_frame_height)
         self.camera.frame.move_to([x_positions[0], baseline_y + initial_frame_height * camera_y_offset, 0])
+        
+        # Create footnote that stays fixed relative to camera
+        # Render at large size and scale down for better kerning
+        sans_font = get_preferred_font()
+        footnote = Text(
+            "Total amount of action data in selected datasets",
+            font=sans_font,
+            font_size=96,
+            slant=ITALIC,
+            color=TEXT_DARK,
+            opacity=0.6
+        ).scale(12/96)
+        
+        # Updater to keep footnote fixed at bottom-right of camera frame
+        def footnote_updater(mob):
+            camera_center = self.camera.frame.get_center()
+            camera_width = self.camera.frame.width
+            camera_height = self.camera.frame.height
+            # Scale to fixed screen size (relative to frame)
+            target_scale = camera_height / 8
+            current_scale = mob.height / 0.15 if mob.height > 0 else 1  # Approximate original height
+            mob.scale(target_scale / current_scale if current_scale > 0 else 1)
+            # Position at bottom right
+            mob.move_to([
+                camera_center[0] + camera_width * 0.37,
+                camera_center[1] - camera_height * 0.47,
+                0
+            ])
+        
+        # Apply initial position and add updater
+        footnote_updater(footnote)
+        footnote.add_updater(footnote_updater)
+        footnote.set_z_index(100)  # Always on top
+        self.add(footnote)
         
         # Show OXE circle
         label_0, line_0 = create_label_and_line(circles[0], labels[0], initial_frame_height, radii[0])

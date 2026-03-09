@@ -34,11 +34,11 @@ LABEL_FONT = get_preferred_font()
 # CONFIGURATION
 # =============================================================================
 
-# Aspect ratio (3:1 - wide diagram)
+# Aspect ratio (4:1 - wide diagram, tighter crop)
 config.pixel_width = 3600
 config.pixel_height = 1200
-config.frame_width = 18
-config.frame_height = 6
+config.frame_width = 14
+config.frame_height = 3.5
 
 # =============================================================================
 # COLORS (matching the inspiration)
@@ -535,6 +535,45 @@ class OverviewDiagram(Scene):
         # Store final position for generated actions chunk (for animation)
         ga_final_position = [generated_actions_center[0], chunk_y, 0]
         
+        # # =====================================================================
+        # # CREATE INDEX LABELS UNDERNEATH CHUNKS (fixed, math typeset)
+        # # =====================================================================
+        
+        # label_y = chunk_y - CHUNK_SIZE / 2 - 0.25  # Position below chunks (moved down)
+        # index_label_scale = 0.5  # Larger scale
+        
+        # # Helper to create index label with MathTex (bold)
+        # def make_index_label(tex, x, color):
+        #     # Use \mathbf for bold
+        #     label = MathTex(r"\boldsymbol{" + tex + "}", color=color).scale(index_label_scale)
+        #     label.move_to([x, label_y, 0])
+        #     return label
+        
+        # # Video context labels: -N, (ellipsis), -2, -1, 0 (orange color)
+        # vc_slot_positions = video_context_cache.slot_positions
+        
+        # vc_label_n = make_index_label("-N", vc_slot_positions[0], VIDEO_CONTEXT_STROKE)
+        # vc_label_2 = make_index_label("-2", vc_slot_positions[2], VIDEO_CONTEXT_STROKE)
+        # vc_label_1 = make_index_label("-1", vc_slot_positions[3], VIDEO_CONTEXT_STROKE)
+        # vc_label_0 = make_index_label("0", vc_slot_positions[4], VIDEO_CONTEXT_STROKE)
+        
+        # vc_index_labels = VGroup(vc_label_n, vc_label_2, vc_label_1, vc_label_0)
+        
+        # # Predicted video labels: 0, +1 (blue color)
+        # pv_label_0 = make_index_label("+1", pv_final_positions[0][0], PREDICTED_VIDEO_STROKE)
+        # pv_label_1 = make_index_label("+2", pv_final_positions[1][0], PREDICTED_VIDEO_STROKE)
+        
+        # pv_index_labels = VGroup(pv_label_0, pv_label_1)
+        
+        # # Generated actions label: +1 (yellow color)
+        # ga_label_1 = make_index_label("+1", ga_final_position[0], GENERATED_ACTIONS_STROKE)
+        
+        # ga_index_labels = VGroup(ga_label_1)
+        
+        # # Group all index labels
+        # all_index_labels = VGroup(vc_index_labels, pv_index_labels, ga_index_labels)
+        # all_index_labels.set_z_index(5)  # Above chunks
+        
         # =====================================================================
         # CREATE CONNECTORS BETWEEN ELEMENTS (horizontal, thick)
         # Using continuous Lines that go behind shapes + separate Triangles for arrowheads
@@ -747,6 +786,8 @@ class OverviewDiagram(Scene):
             video_context_cache,
             pv_chunks,
             ga_chunk,
+            # # Index labels underneath chunks
+            # all_index_labels,
             # Model boxes (on top)
             video_model_group,
             action_model_group,
