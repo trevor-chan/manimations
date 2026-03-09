@@ -44,14 +44,14 @@ config.frame_height = 6
 # COLORS (matching the inspiration)
 # =============================================================================
 
-# Main blocks
-VIDEO_CONTEXT_FILL = "#FFCCAA"       # Peach/orange fill
+# Main blocks - white fill with colored strokes
+VIDEO_CONTEXT_FILL = "#FFFFFF"       # White fill
 VIDEO_CONTEXT_STROKE = "#FF9955"     # Orange stroke
 
-PREDICTED_VIDEO_FILL = "#FFF6D5"     # Light yellow fill
+PREDICTED_VIDEO_FILL = "#FFFFFF"     # White fill
 PREDICTED_VIDEO_STROKE = "#FFE680"   # Yellow stroke
 
-GENERATED_ACTIONS_FILL = "#D5E5FF"   # Light blue fill
+GENERATED_ACTIONS_FILL = "#FFFFFF"   # White fill
 GENERATED_ACTIONS_STROKE = "#80B3FF" # Blue stroke
 
 # Model boxes and connectors
@@ -64,7 +64,9 @@ CONNECTOR_COLOR = "#B3B3B3"          # Gray for arrows and loop
 # =============================================================================
 
 # Box dimensions
-DATA_BOX_WIDTH = 2.5
+VIDEO_CONTEXT_WIDTH = 3.75  # 50% wider than original
+PREDICTED_VIDEO_WIDTH = 1.8  # Narrower
+GENERATED_ACTIONS_WIDTH = 1.8  # Narrower
 DATA_BOX_HEIGHT = 2.5
 DATA_BOX_CORNER_RADIUS = 0.18
 DATA_BOX_STROKE_WIDTH = 5  # Thicker borders
@@ -93,6 +95,203 @@ ARROW_TIP_LENGTH = 0.25
 LABEL_FONT_SIZE = 96
 LABEL_SCALE = 0.18  # Slightly smaller to fit in boxes
 
+# Data chunk (small square) properties
+CHUNK_SIZE = 0.55  # Size of small squares
+CHUNK_CORNER_RADIUS = 0.1
+CHUNK_STROKE_WIDTH = 3
+CHUNK_SPACING = 0.12  # Gap between chunks
+
+
+# =============================================================================
+# CUSTOM MOBJECTS
+# =============================================================================
+
+class DataChunk(VGroup):
+    """
+    A small rounded square representing a data chunk.
+    Supports animation: fading, translation, and color changes.
+    """
+    
+    def __init__(self, color, size=CHUNK_SIZE, fill_opacity=0.3, **kwargs):
+        super().__init__(**kwargs)
+        
+        self.chunk_color = color
+        self.base_fill_opacity = fill_opacity
+        
+        # Create rounded rectangle
+        self.rect = RoundedRectangle(
+            width=size,
+            height=size,
+            corner_radius=CHUNK_CORNER_RADIUS,
+            fill_color=color,
+            fill_opacity=fill_opacity,
+            stroke_color=color,
+            stroke_width=CHUNK_STROKE_WIDTH
+        )
+        self.add(self.rect)
+    
+    def set_chunk_opacity(self, opacity):
+        """Set both fill and stroke opacity proportionally."""
+        self.rect.set_fill(opacity=opacity * self.base_fill_opacity)
+        self.rect.set_stroke(opacity=opacity)
+        return self
+    
+    def set_chunk_color(self, color):
+        """Change the chunk's color."""
+        self.chunk_color = color
+        self.rect.set_fill(color=color)
+        self.rect.set_stroke(color=color)
+        return self
+
+
+class VideoContextCache(VGroup):
+    """
+    Manages a cache of video context chunks with cycling animation.
+    
+    Layout: 5 positions from left to right:
+    - Index 0: leftmost chunk (visible)
+    - Index 1: ellipsis position (invisible)
+    - Index 2-4: three chunks on the right (visible)
+    
+    When cycling:
+    - Chunks shift left by one position
+    - Chunk at index 2 fades out as it moves to index 1
+    - Chunk at index 1 fades in as it moves to index 0
+    - Chunk at index 0 fades out and exits
+    - A new chunk appears at index 4
+    """
+    
+    def __init__(self, center_x, y, color=VIDEO_CONTEXT_STROKE, **kwargs):
+        super().__init__(**kwargs)
+        
+        self.color = color
+        self.y = y
+        self.center_x = center_x
+        
+        # Calculate 5 slot positions
+        # Slots: [leftmost, ellipsis, right_0, right_1, right_2]
+        spacing = CHUNK_SIZE + CHUNK_SPACING
+        
+        # Right group starts slightly right of center
+        right_group_start_x = center_x + 0.05
+        
+        # Calculate positions for all 5 slots
+        self.slot_positions = [
+            center_x - VIDEO_CONTEXT_WIDTH/2 + CHUNK_SIZE/2 + 0.25,  # Index 0: leftmost
+            None,  # Index 1: ellipsis (calculated below)
+            right_group_start_x,                    # Index 2: first of right group
+            right_group_start_x + spacing,          # Index 3: second of right group
+            right_group_start_x + 2 * spacing,      # Index 4: third of right group (rightmost)
+        ]
+        # Ellipsis position: midpoint between leftmost right edge and right group left edge
+        self.slot_positions[1] = (self.slot_positions[0] + CHUNK_SIZE/2 + self.slot_positions[2] - CHUNK_SIZE/2) / 2
+        
+        # Create 5 chunks, one for each slot
+        self.chunks = []
+        for i in range(5):
+            chunk = DataChunk(color)
+            chunk.move_to([self.slot_positions[i], y, 0])
+            
+            # Slot 1 (ellipsis position) starts invisible
+            if i == 1:
+                chunk.set_chunk_opacity(0)
+            
+            self.chunks.append(chunk)
+            self.add(chunk)
+        
+        # Create the ellipsis text (positioned at slot 1)
+        self.ellipsis = Text("...", font=LABEL_FONT, font_size=72, color=TEXT_DARK).scale(0.5)
+        self.ellipsis.move_to([self.slot_positions[1], y, 0])
+        self.add(self.ellipsis)
+    
+    def get_fadeout_animation(self, run_time=0.3):
+        """
+        Returns animation to fade out the leftmost chunk.
+        Call this BEFORE get_shift_animations.
+        """
+        old_chunk_0 = self.chunks[0]
+        return old_chunk_0.animate.set_chunk_opacity(0)
+    
+    def get_shift_animations(self, run_time=0.5):
+        """
+        Returns animations for shifting chunks left after leftmost has faded out.
+        
+        During a shift:
+        - Chunk at slot 1 moves to slot 0, fades IN (fast)
+        - Chunk at slot 2 moves to slot 1, fades OUT (fast)
+        - Chunks at slots 3, 4 shift left (stay visible)
+        """
+        animations = []
+        
+        # Chunk at slot 1: move to slot 0, fade IN
+        chunk_1 = self.chunks[1]
+        target_pos_0 = [self.slot_positions[0], self.y, 0]
+        animations.append(chunk_1.animate.move_to(target_pos_0).set_chunk_opacity(1))
+        
+        # Chunk at slot 2: move to slot 1, fade OUT
+        chunk_2 = self.chunks[2]
+        target_pos_1 = [self.slot_positions[1], self.y, 0]
+        animations.append(chunk_2.animate.move_to(target_pos_1).set_chunk_opacity(0))
+        
+        # Chunk at slot 3: move to slot 2 (stays visible)
+        chunk_3 = self.chunks[3]
+        target_pos_2 = [self.slot_positions[2], self.y, 0]
+        animations.append(chunk_3.animate.move_to(target_pos_2))
+        
+        # Chunk at slot 4: move to slot 3 (stays visible)
+        chunk_4 = self.chunks[4]
+        target_pos_3 = [self.slot_positions[3], self.y, 0]
+        animations.append(chunk_4.animate.move_to(target_pos_3))
+        
+        return animations
+    
+    def finalize_cycle(self, scene, add_new_chunk=False):
+        """
+        Called after cycle animation completes.
+        Removes old chunk at slot 0 and updates internal chunk list.
+        
+        Args:
+            scene: The manim scene
+            add_new_chunk: If True, creates a new chunk at slot 4 (rightmost)
+        """
+        # Remove the old chunk that faded out
+        old_chunk = self.chunks[0]
+        scene.remove(old_chunk)
+        self.remove(old_chunk)
+        
+        # Shift chunk references
+        self.chunks = self.chunks[1:]  # Remove index 0
+        
+        if add_new_chunk:
+            # Create new chunk at slot 4 (rightmost)
+            new_chunk = DataChunk(self.color)
+            new_chunk.move_to([self.slot_positions[4], self.y, 0])
+            self.chunks.append(new_chunk)
+            self.add(new_chunk)
+            scene.add(new_chunk)
+            
+            # Reset positions of all chunks to their proper slots
+            for i, chunk in enumerate(self.chunks):
+                chunk.move_to([self.slot_positions[i], self.y, 0])
+                # Slot 1 should be invisible
+                if i == 1:
+                    chunk.set_chunk_opacity(0)
+                else:
+                    chunk.set_chunk_opacity(1)
+    
+    def get_visible_chunks(self):
+        """Returns the chunks that are currently visible (all except the ellipsis slot).
+        
+        After finalize_cycle, the list may have fewer than 5 chunks.
+        Slot 1 (ellipsis) is always invisible.
+        """
+        visible = []
+        for i, chunk in enumerate(self.chunks):
+            # Slot 1 is always invisible (ellipsis position)
+            if i != 1:
+                visible.append(chunk)
+        return visible
+
 
 # =============================================================================
 # MAIN SCENE
@@ -107,9 +306,9 @@ class OverviewDiagram(Scene):
         # CREATE DATA BOXES
         # =====================================================================
         
-        # Video context (orange)
+        # Video context (orange) - wider box
         video_context = RoundedRectangle(
-            width=DATA_BOX_WIDTH,
+            width=VIDEO_CONTEXT_WIDTH,
             height=DATA_BOX_HEIGHT,
             corner_radius=DATA_BOX_CORNER_RADIUS,
             fill_color=VIDEO_CONTEXT_FILL,
@@ -118,21 +317,26 @@ class OverviewDiagram(Scene):
             stroke_width=DATA_BOX_STROKE_WIDTH
         )
         
-        video_context_label = Text(
-            "video context",
+        video_context_label = Paragraph(
+            "video", "context",
             font=LABEL_FONT,
             font_size=LABEL_FONT_SIZE,
             color=TEXT_DARK,
-            weight=SEMIBOLD
+            weight=SEMIBOLD,
+            line_spacing=0.5,
+            alignment="center"
         ).scale(LABEL_SCALE)
         
         video_context_group = VGroup(video_context, video_context_label)
-        # Position label at top of box
-        video_context_label.move_to([video_context.get_center()[0], video_context.get_top()[1] - 0.3, 0])
+        # Position label at top of box (lowered)
+        video_context_label.move_to([video_context.get_center()[0], video_context.get_top()[1] - 0.45, 0])
+        # Set z-index: intermediate priority for colored data boxes
+        video_context.set_z_index(0)
+        video_context_label.set_z_index(1)
         
-        # Predicted video (yellow)
+        # Predicted video (yellow) - narrower box
         predicted_video = RoundedRectangle(
-            width=DATA_BOX_WIDTH,
+            width=PREDICTED_VIDEO_WIDTH,
             height=DATA_BOX_HEIGHT,
             corner_radius=DATA_BOX_CORNER_RADIUS,
             fill_color=PREDICTED_VIDEO_FILL,
@@ -141,21 +345,26 @@ class OverviewDiagram(Scene):
             stroke_width=DATA_BOX_STROKE_WIDTH
         )
         
-        predicted_video_label = Text(
-            "predicted video",
+        predicted_video_label = Paragraph(
+            "predicted", "video",
             font=LABEL_FONT,
             font_size=LABEL_FONT_SIZE,
             color=TEXT_DARK,
-            weight=SEMIBOLD
+            weight=SEMIBOLD,
+            line_spacing=0.5,
+            alignment="center"
         ).scale(LABEL_SCALE)
         
         predicted_video_group = VGroup(predicted_video, predicted_video_label)
-        # Position label at top of box
-        predicted_video_label.move_to([predicted_video.get_center()[0], predicted_video.get_top()[1] - 0.3, 0])
+        # Position label at top of box (lowered)
+        predicted_video_label.move_to([predicted_video.get_center()[0], predicted_video.get_top()[1] - 0.45, 0])
+        # Set z-index: intermediate priority for colored data boxes
+        predicted_video.set_z_index(0)
+        predicted_video_label.set_z_index(1)
         
-        # Generated actions (blue)
+        # Generated actions (blue) - narrower box
         generated_actions = RoundedRectangle(
-            width=DATA_BOX_WIDTH,
+            width=GENERATED_ACTIONS_WIDTH,
             height=DATA_BOX_HEIGHT,
             corner_radius=DATA_BOX_CORNER_RADIUS,
             fill_color=GENERATED_ACTIONS_FILL,
@@ -164,17 +373,22 @@ class OverviewDiagram(Scene):
             stroke_width=DATA_BOX_STROKE_WIDTH
         )
         
-        generated_actions_label = Text(
-            "generated actions",
+        generated_actions_label = Paragraph(
+            "generated", "actions",
             font=LABEL_FONT,
             font_size=LABEL_FONT_SIZE,
             color=TEXT_DARK,
-            weight=SEMIBOLD
+            weight=SEMIBOLD,
+            line_spacing=0.5,
+            alignment="center"
         ).scale(LABEL_SCALE)
         
         generated_actions_group = VGroup(generated_actions, generated_actions_label)
-        # Position label at top of box
-        generated_actions_label.move_to([generated_actions.get_center()[0], generated_actions.get_top()[1] - 0.3, 0])
+        # Position label at top of box (lowered)
+        generated_actions_label.move_to([generated_actions.get_center()[0], generated_actions.get_top()[1] - 0.45, 0])
+        # Set z-index: intermediate priority for colored data boxes
+        generated_actions.set_z_index(0)
+        generated_actions_label.set_z_index(1)
         
         # =====================================================================
         # CREATE MODEL BOXES
@@ -197,12 +411,15 @@ class OverviewDiagram(Scene):
             font_size=LABEL_FONT_SIZE,
             color=TEXT_DARK,
             weight=SEMIBOLD,
-            line_spacing=0.8,
+            line_spacing=0.5,
             alignment="center"
         ).scale(LABEL_SCALE * 0.8)
         
         video_model_group = VGroup(video_model, video_model_label)
         video_model_label.move_to(video_model.get_center())
+        # Set z-index: top priority for model boxes
+        video_model.set_z_index(10)
+        video_model_label.set_z_index(11)
         
         # Action model
         action_model = RoundedRectangle(
@@ -221,12 +438,15 @@ class OverviewDiagram(Scene):
             font_size=LABEL_FONT_SIZE,
             color=TEXT_DARK,
             weight=SEMIBOLD,
-            line_spacing=0.8,
+            line_spacing=0.5,
             alignment="center"
         ).scale(LABEL_SCALE * 0.8)
         
         action_model_group = VGroup(action_model, action_model_label)
         action_model_label.move_to(action_model.get_center())
+        # Set z-index: top priority for model boxes
+        action_model.set_z_index(10)
+        action_model_label.set_z_index(11)
         
         # =====================================================================
         # POSITION ALL ELEMENTS
@@ -236,12 +456,14 @@ class OverviewDiagram(Scene):
         # Layout: video_context -- video_model -- predicted_video -- action_model -- generated_actions
         
         total_width = (
-            3 * DATA_BOX_WIDTH +      # 3 data boxes
-            2 * MODEL_BOX_WIDTH +     # 2 model boxes
-            4 * HORIZONTAL_GAP        # gaps between elements
+            VIDEO_CONTEXT_WIDTH +         # video context (wider)
+            PREDICTED_VIDEO_WIDTH +       # predicted video (narrower)
+            GENERATED_ACTIONS_WIDTH +     # generated actions (narrower)
+            2 * MODEL_BOX_WIDTH +         # 2 model boxes
+            4 * HORIZONTAL_GAP            # gaps between elements
         )
         
-        start_x = -total_width / 2 + DATA_BOX_WIDTH / 2
+        start_x = -total_width / 2 + VIDEO_CONTEXT_WIDTH / 2
         
         # Position video context
         video_context_group.move_to([start_x, MAIN_Y, 0])
@@ -249,20 +471,69 @@ class OverviewDiagram(Scene):
         # Position video model (same Y as data boxes for horizontal arrows)
         # Nudge slightly left to better center between data boxes
         model_nudge = 0.1
-        video_model_x = start_x + DATA_BOX_WIDTH / 2 + HORIZONTAL_GAP + MODEL_BOX_WIDTH / 2 - model_nudge
+        video_model_x = start_x + VIDEO_CONTEXT_WIDTH / 2 + HORIZONTAL_GAP + MODEL_BOX_WIDTH / 2 - model_nudge
         video_model_group.move_to([video_model_x, MAIN_Y, 0])
         
         # Position predicted video
-        predicted_video_x = video_model_x + MODEL_BOX_WIDTH / 2 + HORIZONTAL_GAP + DATA_BOX_WIDTH / 2
+        predicted_video_x = video_model_x + MODEL_BOX_WIDTH / 2 + HORIZONTAL_GAP + PREDICTED_VIDEO_WIDTH / 2
         predicted_video_group.move_to([predicted_video_x, MAIN_Y, 0])
         
         # Position action model (nudge left to match video model)
-        action_model_x = predicted_video_x + DATA_BOX_WIDTH / 2 + HORIZONTAL_GAP + MODEL_BOX_WIDTH / 2 - model_nudge
+        action_model_x = predicted_video_x + PREDICTED_VIDEO_WIDTH / 2 + HORIZONTAL_GAP + MODEL_BOX_WIDTH / 2 - model_nudge
         action_model_group.move_to([action_model_x, MAIN_Y, 0])
         
         # Position generated actions
-        generated_actions_x = action_model_x + MODEL_BOX_WIDTH / 2 + HORIZONTAL_GAP + DATA_BOX_WIDTH / 2
+        generated_actions_x = action_model_x + MODEL_BOX_WIDTH / 2 + HORIZONTAL_GAP + GENERATED_ACTIONS_WIDTH / 2
         generated_actions_group.move_to([generated_actions_x, MAIN_Y, 0])
+        
+        # =====================================================================
+        # CREATE DATA CHUNKS (small squares inside data boxes)
+        # =====================================================================
+        
+        # Vertical position for chunks: align with arrows (MAIN_Y)
+        chunk_y = MAIN_Y
+        
+        # --- Video Context Chunks (using VideoContextCache for cycling animation) ---
+        video_context_center = video_context.get_center()
+        video_context_cache = VideoContextCache(
+            center_x=video_context_center[0],
+            y=chunk_y,
+            color=VIDEO_CONTEXT_STROKE
+        )
+        video_context_cache.set_z_index(2)  # Above the box but below labels
+        
+        # --- Predicted Video Chunks (2 yellow squares) - start invisible ---
+        predicted_video_center = predicted_video.get_center()
+        
+        pv_chunks = VGroup()
+        # Center the 2 chunks
+        total_pv_chunks_width = 2 * CHUNK_SIZE + CHUNK_SPACING
+        pv_start_x = predicted_video_center[0] - total_pv_chunks_width / 2 + CHUNK_SIZE / 2
+        for i in range(2):
+            chunk = DataChunk(PREDICTED_VIDEO_STROKE)
+            chunk_x = pv_start_x + i * (CHUNK_SIZE + CHUNK_SPACING)
+            chunk.move_to([chunk_x, chunk_y, 0])
+            chunk.set_chunk_opacity(0)  # Start invisible
+            pv_chunks.add(chunk)
+        
+        pv_chunks.set_z_index(2)
+        
+        # Store final positions for predicted video chunks (for animation)
+        pv_final_positions = [
+            [pv_start_x, chunk_y, 0],
+            [pv_start_x + CHUNK_SIZE + CHUNK_SPACING, chunk_y, 0]
+        ]
+        
+        # --- Generated Actions Chunks (1 blue square) - start invisible ---
+        generated_actions_center = generated_actions.get_center()
+        
+        ga_chunk = DataChunk(GENERATED_ACTIONS_STROKE)
+        ga_chunk.move_to([generated_actions_center[0], chunk_y, 0])
+        ga_chunk.set_chunk_opacity(0)  # Start invisible
+        ga_chunk.set_z_index(2)
+        
+        # Store final position for generated actions chunk (for animation)
+        ga_final_position = [generated_actions_center[0], chunk_y, 0]
         
         # =====================================================================
         # CREATE CONNECTORS BETWEEN ELEMENTS (horizontal, thick)
@@ -300,8 +571,9 @@ class OverviewDiagram(Scene):
             end=[predicted_video.get_left()[0] - arrowhead_offset, arrow_y, 0],
             **line_config
         )
-        connector1_line.set_z_index(-1)  # Behind shapes
+        connector1_line.set_z_index(-10)  # Bottom priority - behind everything
         connector1_head = make_arrowhead(predicted_video.get_left()[0] - arrowhead_offset, arrow_y)
+        connector1_head.set_z_index(-10)  # Bottom priority
         connector1 = VGroup(connector1_line, connector1_head)
         
         # Create one continuous line from predicted_video through action_model to generated_actions
@@ -311,8 +583,9 @@ class OverviewDiagram(Scene):
             end=[generated_actions.get_left()[0] - arrowhead_offset, arrow_y, 0],
             **line_config
         )
-        connector2_line.set_z_index(-1)  # Behind shapes
+        connector2_line.set_z_index(-10)  # Bottom priority - behind everything
         connector2_head = make_arrowhead(generated_actions.get_left()[0] - arrowhead_offset, arrow_y)
+        connector2_head.set_z_index(-10)  # Bottom priority
         connector2 = VGroup(connector2_line, connector2_head)
         
         # =====================================================================
@@ -425,6 +698,9 @@ class OverviewDiagram(Scene):
         loop_end_head = make_arrowhead(box_left_x - arrowhead_offset, MAIN_Y)  # Arrowhead at box edge
         loop_parts.add(loop_end_head)
         
+        # Set z-index for all loop parts: bottom priority
+        loop_parts.set_z_index(-10)
+        
         # Action rollout label box (positioned on the bottom horizontal line)
         action_rollout_box = RoundedRectangle(
             width=LOOP_BOX_WIDTH,
@@ -445,6 +721,9 @@ class OverviewDiagram(Scene):
             weight=SEMIBOLD
         ).scale(LABEL_SCALE * 0.8)
         action_rollout_label.move_to(action_rollout_box.get_center())
+        # Set z-index: top priority for action rollout (same as model boxes)
+        action_rollout_box.set_z_index(10)
+        action_rollout_label.set_z_index(11)
         
         action_rollout_group = VGroup(action_rollout_box, action_rollout_label)
         
@@ -464,12 +743,270 @@ class OverviewDiagram(Scene):
             video_context_group,
             predicted_video_group,
             generated_actions_group,
+            # Data chunks inside boxes
+            video_context_cache,
+            pv_chunks,
+            ga_chunk,
             # Model boxes (on top)
             video_model_group,
             action_model_group,
         )
         
         # Wait a moment for rendering
+        self.wait(1)
+        
+        # =====================================================================
+        # ANIMATION CYCLE
+        # =====================================================================
+        
+        # -----------------------------------------------------------------
+        # Step 1+2: Video context ghosts → Video Model → Predicted Video
+        #           (all concurrent with cache shuffle)
+        # -----------------------------------------------------------------
+        
+        # Create ghost copies of visible video context chunks BEFORE shuffling
+        visible_chunks = video_context_cache.get_visible_chunks()
+        ghosts = VGroup()
+        for chunk in visible_chunks:
+            ghost = chunk.copy()
+            ghost.set_chunk_opacity(0.6)  # Semi-transparent ghost
+            ghosts.add(ghost)
+        self.add(ghosts)
+        
+        # Target: center of video model
+        video_model_center = video_model.get_center()
+        
+        # Prepare predicted video chunks at video model position, scaled down
+        for i, pv_chunk in enumerate(pv_chunks):
+            pv_chunk.move_to(video_model_center)
+            pv_chunk.scale(0.3)
+            pv_chunk.set_chunk_opacity(0)
+        
+        # Build ghost animations (converging into video model) - 0.5s
+        ghost_anims = []
+        for ghost in ghosts:
+            ghost_anims.append(
+                ghost.animate
+                    .move_to(video_model_center)
+                    .scale(0.3)
+                    .set_chunk_opacity(0)
+            )
+        
+        # Build predicted video emerge animations - 0.5s
+        pv_emerge_anims = []
+        for i, pv_chunk in enumerate(pv_chunks):
+            pv_emerge_anims.append(
+                pv_chunk.animate
+                    .move_to(pv_final_positions[i])
+                    .scale(1/0.3)
+                    .set_chunk_opacity(1)
+            )
+        
+        # Get cache shuffle animations
+        fadeout_anim = video_context_cache.get_fadeout_animation()
+        shift_anims = video_context_cache.get_shift_animations()
+        
+        # Create the full video model sequence: ghosts in → predictions out
+        video_model_sequence = Succession(
+            AnimationGroup(*ghost_anims, run_time=0.5),
+            AnimationGroup(*pv_emerge_anims, run_time=0.5),
+        )
+        
+        # Create cache shuffle sequence: fadeout → shift
+        cache_shuffle_sequence = Succession(
+            fadeout_anim,
+            AnimationGroup(*shift_anims),
+        )
+        
+        # Play both sequences in parallel
+        self.play(
+            video_model_sequence,
+            cache_shuffle_sequence,
+            run_time=1.0
+        )
+        
+        # Finalize cache (don't add new chunk - we'll do that in step 4)
+        video_context_cache.finalize_cycle(self, add_new_chunk=False)
+        
+        # Remove ghosts
+        self.remove(ghosts)
+        
+        self.wait(0.15)
+        
+        # -----------------------------------------------------------------
+        # Step 3: Predicted Video ghosts → Action Model → Generated Action out
+        # -----------------------------------------------------------------
+        
+        # Create ghost copies of predicted video chunks
+        pv_ghosts = VGroup()
+        for pv_chunk in pv_chunks:
+            ghost = pv_chunk.copy()
+            ghost.set_chunk_opacity(0.6)  # Semi-transparent ghost
+            pv_ghosts.add(ghost)
+        self.add(pv_ghosts)
+        
+        # Target: center of action model
+        action_model_center = action_model.get_center()
+        
+        # Animate ghosts converging into action model (scale down, move, fade out)
+        # AND fade out original predicted video chunks
+        pv_ghost_anims = []
+        for ghost in pv_ghosts:
+            pv_ghost_anims.append(
+                ghost.animate
+                    .move_to(action_model_center)
+                    .scale(0.3)
+                    .set_chunk_opacity(0)
+            )
+        
+        # Fade out original pv_chunks as ghosts move
+        pv_fadeout_anims = [pv_chunk.animate.set_chunk_opacity(0) for pv_chunk in pv_chunks]
+        
+        self.play(*pv_ghost_anims, *pv_fadeout_anims, run_time=0.5)
+        
+        # Remove ghosts and faded-out originals
+        self.remove(pv_ghosts)
+        self.remove(*pv_chunks)
+        
+        self.wait(0.1)
+        
+        # Generated action chunk emerges from action model
+        # Start it at action model position, scaled down
+        ga_chunk.move_to(action_model_center)
+        ga_chunk.scale(0.3)
+        ga_chunk.set_chunk_opacity(0)
+        
+        # Animate it expanding to its final position
+        self.play(
+            ga_chunk.animate
+                .move_to(ga_final_position)
+                .scale(1/0.3)
+                .set_chunk_opacity(1),
+            run_time=0.5
+        )
+        
+        self.wait(0.15)
+        
+        # -----------------------------------------------------------------
+        # Step 4: Generated Action → Loop → Action Rollout → Video Context
+        # -----------------------------------------------------------------
+        
+        # Create ghost of generated action chunk to follow the loop
+        loop_chunk = ga_chunk.copy()
+        loop_chunk.set_chunk_opacity(0.8)
+        self.add(loop_chunk)
+        
+        # Fade out original ga_chunk immediately
+        self.play(ga_chunk.animate.set_chunk_opacity(0), run_time=0.15)
+        self.remove(ga_chunk)
+        
+        # Final destination for path: rightmost slot of video context cache
+        rightmost_x = video_context_cache.slot_positions[4]
+        final_vc_position = np.array([rightmost_x, chunk_y, 0])
+        
+        # Build FULL path from generated actions through loop to final cache position
+        full_loop_path = VMobject()
+        
+        # Start at generated actions center
+        full_loop_path.set_points_as_corners([
+            np.array([ga_final_position[0], MAIN_Y, 0]),
+            np.array([box_right_x, MAIN_Y, 0]),
+            np.array([loop_right_x + corner_radius, MAIN_Y, 0]),
+        ])
+        
+        # Add top-right corner arc
+        corner1_path = Arc(
+            radius=corner_radius,
+            start_angle=PI/2,
+            angle=-PI/2,
+        )
+        corner1_path.move_arc_center_to(np.array([loop_right_x + corner_radius, MAIN_Y - corner_radius, 0]))
+        full_loop_path.append_vectorized_mobject(corner1_path)
+        
+        # Vertical line down
+        full_loop_path.add_line_to(np.array([loop_right_x + 2*corner_radius, loop_bottom_y + corner_radius, 0]))
+        
+        # Add bottom-right corner arc
+        corner2_path = Arc(
+            radius=corner_radius,
+            start_angle=0,
+            angle=-PI/2,
+        )
+        corner2_path.move_arc_center_to(np.array([loop_right_x + corner_radius, loop_bottom_y + corner_radius, 0]))
+        full_loop_path.append_vectorized_mobject(corner2_path)
+        
+        # Horizontal line along bottom (through action rollout)
+        full_loop_path.add_line_to(np.array([loop_left_x - corner_radius, loop_bottom_y, 0]))
+        
+        # Add bottom-left corner arc
+        corner3_path = Arc(
+            radius=corner_radius,
+            start_angle=-PI/2,
+            angle=-PI/2,
+        )
+        corner3_path.move_arc_center_to(np.array([loop_left_x - corner_radius, loop_bottom_y + corner_radius, 0]))
+        full_loop_path.append_vectorized_mobject(corner3_path)
+        
+        # Vertical line up
+        full_loop_path.add_line_to(np.array([loop_left_x - 2*corner_radius, MAIN_Y - corner_radius, 0]))
+        
+        # Add top-left corner arc
+        corner4_path = Arc(
+            radius=corner_radius,
+            start_angle=PI,
+            angle=-PI/2,
+        )
+        corner4_path.move_arc_center_to(np.array([loop_left_x - corner_radius, MAIN_Y - corner_radius, 0]))
+        full_loop_path.append_vectorized_mobject(corner4_path)
+        
+        # Horizontal line into video context box
+        full_loop_path.add_line_to(np.array([box_left_x, MAIN_Y, 0]))
+        
+        # Continue to final cache position (up and right to chunk_y level)
+        full_loop_path.add_line_to(final_vc_position)
+        
+        # Get path length for color interpolation
+        path_length = full_loop_path.get_arc_length()
+        
+        # Colors for interpolation (blue to orange via a nicer path)
+        start_color = ManimColor(GENERATED_ACTIONS_STROKE)
+        end_color = ManimColor(VIDEO_CONTEXT_STROKE)
+        
+        # Create a ValueTracker to drive the animation progress
+        progress = ValueTracker(0)
+        
+        # Store initial position for path point calculation
+        def get_color_at_progress(p):
+            # Use interpolate_color for smooth transition
+            # Going through a slight desaturation in the middle can look nicer
+            return interpolate_color(start_color, end_color, p)
+        
+        # Add updater for smooth color transition
+        def color_updater(mob):
+            p = progress.get_value()
+            new_color = get_color_at_progress(p)
+            mob.rect.set_stroke(color=new_color)
+            mob.rect.set_fill(color=new_color)
+            # Fade to full opacity as we approach the end
+            opacity = 0.8 + 0.2 * p  # 0.8 -> 1.0
+            mob.set_chunk_opacity(opacity)
+        
+        loop_chunk.add_updater(color_updater)
+        
+        # Animate chunk following full path with color transition
+        # Timing balanced with upper path (steps 1-3): ~2.8s total
+        self.play(
+            MoveAlongPath(loop_chunk, full_loop_path, rate_func=linear),
+            progress.animate.set_value(1),
+            run_time=2.8
+        )
+        
+        loop_chunk.remove_updater(color_updater)
+        
+        # Add the chunk to the video context cache
+        video_context_cache.chunks.append(loop_chunk)
+        video_context_cache.add(loop_chunk)
+        
         self.wait(1)
 
 
