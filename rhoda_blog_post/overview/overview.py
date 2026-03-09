@@ -529,7 +529,7 @@ class OverviewDiagram(Scene):
         
         ga_chunk = DataChunk(GENERATED_ACTIONS_STROKE)
         ga_chunk.move_to([generated_actions_center[0], chunk_y, 0])
-        ga_chunk.set_chunk_opacity(0)  # Start invisible
+        ga_chunk.set_chunk_opacity(0.5)  # Start invisible
         ga_chunk.set_z_index(2)
         
         # Store final position for generated actions chunk (for animation)
@@ -825,109 +825,148 @@ class OverviewDiagram(Scene):
         p3_time = PHASE3_FRAC * CYCLE_TIME
         p4_time = PHASE4_FRAC * CYCLE_TIME
         
-        # --- SETUP BOTTOM LOOP CHUNK ---
+        # Context shuffle timing
+        shuffle_delay = 0.25  # Delay before shuffle starts (as fraction of p1_time)
+        fadeout_time = 0.15  # Leftmost chunk fadeout duration
+        shift_time = 0.25    # Shift animation duration
+        
+        # =================================================================
+        # PRE-CREATE ALL ANIMATED OBJECTS
+        # =================================================================
+        
+        # --- Bottom loop chunk ---
         bottom_chunk = DataChunk(GENERATED_ACTIONS_STROKE)
         bottom_chunk.move_to(ga_final_position)
-        bottom_chunk.set_chunk_opacity(0.8)
+        bottom_chunk.set_chunk_opacity(1.0)
         self.add(bottom_chunk)
         
         bottom_path = build_bottom_loop_path()
         
-        # Global progress tracker for bottom loop (0 to 1 over full cycle)
-        global_progress = ValueTracker(0)
-        
-        # Position updater - moves chunk along path based on progress
-        def position_updater(mob):
-            p = global_progress.get_value()
-            point = bottom_path.point_from_proportion(min(p, 1.0))
-            mob.move_to(point)
-        
-        # Color updater
-        def color_updater(mob):
-            p = global_progress.get_value()
-            new_color = interpolate_color(start_color, end_color, p)
-            mob.rect.set_stroke(color=new_color)
-            mob.rect.set_fill(color=new_color)
-            mob.set_chunk_opacity(0.8 + 0.2 * p)
-        
-        bottom_chunk.add_updater(position_updater)
-        bottom_chunk.add_updater(color_updater)
-        
-        # --- SETUP TOP LOOP ELEMENTS ---
-        
-        # Context ghosts for phase 1
+        # --- Context ghosts (for Phase 1) ---
         visible_chunks = video_context_cache.get_visible_chunks()
         context_ghosts = VGroup()
         for chunk in visible_chunks:
             ghost = chunk.copy()
-            ghost.set_chunk_opacity(0.6)
+            ghost.set_chunk_opacity(1.0)
             context_ghosts.add(ghost)
         self.add(context_ghosts)
         
-        # Prepare pv_chunks at video model (scaled down, invisible)
+        # --- PV chunks: start at video model (scaled down, low opacity) ---
         for i, pv_chunk in enumerate(pv_chunks):
             pv_chunk.move_to(video_model_center)
             pv_chunk.scale(0.3)
-            pv_chunk.set_chunk_opacity(0)
+            pv_chunk.set_chunk_opacity(0.5)
         
-        # Prepare ga_chunk at action model (scaled down, invisible)
-        ga_chunk.move_to(action_model_center)
-        ga_chunk.scale(0.3)
-        ga_chunk.set_chunk_opacity(0)
-        
-        # --- PHASE 1: Context ghosts → Video Model ---
-        self.play(
-            *[ghost.animate.move_to(video_model_center).scale(0.3).set_chunk_opacity(0)
-              for ghost in context_ghosts],
-            video_context_cache.get_fadeout_animation(),
-            *video_context_cache.get_shift_animations(),
-            global_progress.animate(rate_func=linear).set_value(PHASE1_FRAC),
-            run_time=p1_time
-        )
-        video_context_cache.finalize_cycle(self, add_new_chunk=False)
-        self.remove(context_ghosts)
-        
-        # --- PHASE 2: Predicted Video emerges ---
-        self.play(
-            *[pv_chunk.animate.move_to(pv_final_positions[i]).scale(1/0.3).set_chunk_opacity(1)
-              for i, pv_chunk in enumerate(pv_chunks)],
-            global_progress.animate(rate_func=linear).set_value(PHASE1_FRAC + PHASE2_FRAC),
-            run_time=p2_time
-        )
-        
-        # --- PHASE 3: PV ghosts → Action Model ---
-        # Create ghosts as COPIES of the now-visible pv_chunks (same opacity for seamless transition)
+        # --- PV ghosts (for Phase 3): pre-create at final PV positions ---
         pv_ghosts = VGroup()
-        for pv_chunk in pv_chunks:
-            ghost = pv_chunk.copy()
-            ghost.set_chunk_opacity(1.0)  # Match the original's opacity
+        for i, pv_chunk in enumerate(pv_chunks):
+            ghost = DataChunk(PREDICTED_VIDEO_STROKE)
+            ghost.move_to(pv_final_positions[i])
+            ghost.set_chunk_opacity(0)  # Start invisible, will be shown in Phase 3
             pv_ghosts.add(ghost)
         self.add(pv_ghosts)
         
-        # Instantly hide original pv_chunks (ghosts replace them visually)
-        for pv_chunk in pv_chunks:
-            pv_chunk.set_chunk_opacity(0)
-        self.remove(*pv_chunks)
+        # --- GA chunk: start at action model (scaled down, low opacity) ---
+        ga_chunk.move_to(action_model_center)
+        ga_chunk.scale(0.3)
+        ga_chunk.set_chunk_opacity(0.5)
         
-        # Ghosts move to action model, shrinking and fading
-        self.play(
-            *[ghost.animate.move_to(action_model_center).scale(0.3).set_chunk_opacity(0)
-              for ghost in pv_ghosts],
-            global_progress.animate(rate_func=linear).set_value(PHASE1_FRAC + PHASE2_FRAC + PHASE3_FRAC),
-            run_time=p3_time
+        # =================================================================
+        # BUILD ANIMATION GROUPS
+        # =================================================================
+        
+        # --- LOWER LOOP: MoveAlongPath with color interpolation ---
+        # Use UpdateFromAlphaFunc to control color based on animation progress
+        def update_color(mob, alpha):
+            new_color = interpolate_color(start_color, end_color, alpha)
+            mob.rect.set_stroke(color=new_color)
+            mob.rect.set_fill(color=new_color)
+            mob.set_chunk_opacity(0.8 + 0.2 * alpha)
+        
+        # Create a dummy mobject for the color animation (since MoveAlongPath controls position)
+        color_dummy = Mobject()
+        
+        lower_loop = AnimationGroup(
+            MoveAlongPath(bottom_chunk, bottom_path, rate_func=linear),
+            UpdateFromAlphaFunc(color_dummy, lambda m, a: update_color(bottom_chunk, a), rate_func=linear),
+            run_time=CYCLE_TIME
         )
-        self.remove(pv_ghosts)
         
-        # --- PHASE 4: Generated Action emerges ---
-        self.play(
+        # --- UPPER LOOP SEQUENCE (Phases 1-4) ---
+        
+        # Phase 1: Context ghosts → Video Model
+        phase1_ghost_anim = AnimationGroup(
+            *[ghost.animate.move_to(video_model_center).scale(0.3).set_chunk_opacity(0.5)
+              for ghost in context_ghosts],
+            run_time=p1_time
+        )
+        
+        # Phase 2: Predicted Video emerges from video model
+        phase2_anim = AnimationGroup(
+            *[pv_chunk.animate.move_to(pv_final_positions[i]).scale(1/0.3).set_chunk_opacity(1)
+              for i, pv_chunk in enumerate(pv_chunks)],
+            run_time=p2_time
+        )
+        
+        # Phase 3: PV ghosts appear and move → Action Model
+        # First show ghosts at full opacity, then move them to action model
+        phase3_anim = Succession(
+            # Instantly show ghosts and hide originals
+            AnimationGroup(
+                *[ghost.animate(run_time=0.01).set_chunk_opacity(1) for ghost in pv_ghosts],
+                *[pv_chunk.animate(run_time=0.01).set_chunk_opacity(0) for pv_chunk in pv_chunks],
+            ),
+            # Move ghosts to action model
+            AnimationGroup(
+                *[ghost.animate.move_to(action_model_center).scale(0.3).set_chunk_opacity(0.5)
+                  for ghost in pv_ghosts],
+                run_time=p3_time - 0.01
+            ),
+        )
+        
+        # Phase 4: Generated Action emerges from action model
+        phase4_anim = AnimationGroup(
             ga_chunk.animate.move_to(ga_final_position).scale(1/0.3).set_chunk_opacity(1),
-            global_progress.animate(rate_func=linear).set_value(1.0),
             run_time=p4_time
         )
         
-        # --- CLEANUP ---
-        bottom_chunk.remove_updater(position_updater)
-        bottom_chunk.remove_updater(color_updater)
+        # Combine phases 1-4 into a Succession
+        upper_loop_sequence = Succession(
+            phase1_ghost_anim,
+            phase2_anim,
+            phase3_anim,
+            phase4_anim,
+        )
+        
+        # --- CONTEXT SHUFFLE (delayed, two-stage) ---
+        context_shuffle = Succession(
+            Wait(shuffle_delay),  # Delay before starting
+            video_context_cache.get_fadeout_animation(),  # Fadeout leftmost
+            AnimationGroup(*video_context_cache.get_shift_animations(), run_time=shift_time),  # Shift
+        )
+        
+        # --- UPPER LOOP: Sequence + Shuffle in parallel ---
+        upper_loop = AnimationGroup(
+            upper_loop_sequence,
+            context_shuffle,
+        )
+        
+        # =================================================================
+        # RUN BOTH LOOPS IN PARALLEL
+        # =================================================================
+        
+        self.play(
+            upper_loop,
+            lower_loop,
+            run_time=CYCLE_TIME
+        )
+        
+        # =================================================================
+        # CLEANUP
+        # =================================================================
+        
+        video_context_cache.finalize_cycle(self, add_new_chunk=False)
+        self.remove(context_ghosts, pv_ghosts)
         
         # Add arrived bottom chunk to cache
         video_context_cache.chunks.append(bottom_chunk)
