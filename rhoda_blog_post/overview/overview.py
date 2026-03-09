@@ -49,10 +49,10 @@ VIDEO_CONTEXT_FILL = "#FFFFFF"       # White fill
 VIDEO_CONTEXT_STROKE = "#FF9955"     # Orange stroke
 
 PREDICTED_VIDEO_FILL = "#FFFFFF"     # White fill
-PREDICTED_VIDEO_STROKE = "#FFE680"   # Yellow stroke
+PREDICTED_VIDEO_STROKE = "#80B3FF"   # Blue stroke (swapped)
 
 GENERATED_ACTIONS_FILL = "#FFFFFF"   # White fill
-GENERATED_ACTIONS_STROKE = "#80B3FF" # Blue stroke
+GENERATED_ACTIONS_STROKE = "#FFE680" # Yellow stroke (swapped)
 
 # Model boxes and connectors
 MODEL_BOX_FILL = "#ECECEC"           # Light gray
