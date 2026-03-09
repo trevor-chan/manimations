@@ -35,8 +35,8 @@ LABEL_FONT = get_preferred_font()
 # =============================================================================
 
 # Aspect ratio (3:1 - wide diagram)
-config.pixel_width = 2400
-config.pixel_height = 800
+config.pixel_width = 3600
+config.pixel_height = 1200
 config.frame_width = 18
 config.frame_height = 6
 
@@ -406,7 +406,7 @@ class OverviewDiagram(Scene):
         )
         
         video_model_label = Paragraph(
-            "video", "model",
+            "causal", "video", "model",
             font=LABEL_FONT,
             font_size=LABEL_FONT_SIZE,
             color=TEXT_DARK,
@@ -433,7 +433,7 @@ class OverviewDiagram(Scene):
         )
         
         action_model_label = Paragraph(
-            "action", "model",
+            "inverse", "dynamics", "model",
             font=LABEL_FONT,
             font_size=LABEL_FONT_SIZE,
             color=TEXT_DARK,
