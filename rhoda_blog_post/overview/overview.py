@@ -14,7 +14,10 @@ from matplotlib import font_manager
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from colors import (
     RHODA_ORANGE, RHODA_BLUE, BG_WHITE, TEXT_DARK, MARKER_GRAY,
-    FILL_LIGHT_GRAY
+    FILL_LIGHT_GRAY,
+    VIDEO_CONTEXT_STROKE as VC_STROKE, VIDEO_CONTEXT_FILL as VC_FILL,
+    VIDEO_PREDICTION_STROKE as VP_STROKE, VIDEO_PREDICTION_FILL as VP_FILL,
+    ACTION_PREDICTION_STROKE as AP_STROKE, ACTION_PREDICTION_FILL as AP_FILL,
 )
 
 # =============================================================================
@@ -41,18 +44,18 @@ config.frame_width = 14
 config.frame_height = 3.5
 
 # =============================================================================
-# COLORS (matching the inspiration)
+# COLORS (from unified colors.py)
 # =============================================================================
 
-# Main blocks - white fill with colored strokes
-VIDEO_CONTEXT_FILL = "#FFFFFF"       # White fill
-VIDEO_CONTEXT_STROKE = "#FF9955"     # Orange stroke
+# Main blocks - white fill with colored strokes from colors.py
+VIDEO_CONTEXT_FILL = "#FFFFFF"       # White fill for outer box
+VIDEO_CONTEXT_STROKE = VC_STROKE     # Blue stroke
 
-PREDICTED_VIDEO_FILL = "#FFFFFF"     # White fill
-PREDICTED_VIDEO_STROKE = "#80B3FF"   # Blue stroke (swapped)
+PREDICTED_VIDEO_FILL = "#FFFFFF"     # White fill for outer box
+PREDICTED_VIDEO_STROKE = VP_STROKE   # Purple stroke
 
-GENERATED_ACTIONS_FILL = "#FFFFFF"   # White fill
-GENERATED_ACTIONS_STROKE = "#FFE680" # Yellow stroke (swapped)
+GENERATED_ACTIONS_FILL = "#FFFFFF"   # White fill for outer box
+GENERATED_ACTIONS_STROKE = AP_STROKE # Yellow stroke
 
 # Model boxes and connectors
 MODEL_BOX_FILL = "#ECECEC"           # Light gray

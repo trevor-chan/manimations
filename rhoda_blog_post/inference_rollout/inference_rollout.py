@@ -17,9 +17,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from colors import (
     RHODA_ORANGE, RHODA_BLUE, RHODA_BLUE_LIGHT,
     BG_OFFWHITE, BG_DARK, TEXT_DARK, MARKER_GRAY, FILL_LIGHT_GRAY,
-    VISION_COLOR as _VISION_COLOR, 
-    ACTION_COLOR as _ACTION_COLOR,
-    TIMEBAR_COLOR as _TIMEBAR_COLOR
+    TIMEBAR_COLOR as _TIMEBAR_COLOR,
+    # New unified colors
+    VIDEO_CONTEXT_STROKE, VIDEO_CONTEXT_FILL,
+    VIDEO_PREDICTION_STROKE, VIDEO_PREDICTION_FILL,
+    ACTION_PREDICTION_STROKE, ACTION_PREDICTION_FILL,
 )
 
 # =============================================================================
@@ -101,8 +103,17 @@ CHUNK_MARKER_TOP = _video_model_top + _center_offset + MARKER_MARGIN
 CHUNK_MARKER_BOTTOM = _shared_row_bottom + _center_offset - MARKER_MARGIN
 
 # Colors (using unified color palette from colors.py)
-VISION_COLOR = _VISION_COLOR   # Blue for vision/video elements
-ACTION_COLOR = _ACTION_COLOR   # Orange for action elements
+# Video context (history) - blue
+VIDEO_CONTEXT_COLOR = VIDEO_CONTEXT_STROKE
+VIDEO_CONTEXT_FILL_COLOR = VIDEO_CONTEXT_FILL
+# Video prediction - purple  
+VIDEO_PRED_COLOR = VIDEO_PREDICTION_STROKE
+VIDEO_PRED_FILL_COLOR = VIDEO_PREDICTION_FILL
+# Action prediction - yellow
+ACTION_COLOR = ACTION_PREDICTION_STROKE
+ACTION_FILL_COLOR = ACTION_PREDICTION_FILL
+# Legacy alias for backwards compatibility in this file
+VISION_COLOR = VIDEO_CONTEXT_COLOR
 TIMEBAR_COLOR = _TIMEBAR_COLOR # Dark for timebar
 MARKER_COLOR = MARKER_GRAY     # Gray for chunk markers
 BG_COLOR = BG_OFFWHITE         # Light background
@@ -704,9 +715,9 @@ class InferenceRollout(Scene):
         pred_ghost = Rectangle(
             width=VIDEO_MODEL_WIDTH,  # Start at video model width
             height=TRACK_HEIGHT,
-            fill_color=VISION_COLOR,
+            fill_color=VIDEO_PRED_FILL_COLOR,
             fill_opacity=0.25,  # Match video_prediction opacity
-            stroke_color=VISION_COLOR,
+            stroke_color=VIDEO_PRED_COLOR,
             stroke_width=2
         )
         pred_ghost.move_to(video_model_current_pos)
@@ -723,9 +734,9 @@ class InferenceRollout(Scene):
         video_prediction = Rectangle(
             width=video_pred_width,
             height=TRACK_HEIGHT,
-            fill_color=VISION_COLOR,
+            fill_color=VIDEO_PRED_FILL_COLOR,
             fill_opacity=0.25,  # 25% fill (more transparent than history)
-            stroke_color=VISION_COLOR,
+            stroke_color=VIDEO_PRED_COLOR,
             stroke_width=2
         )
         video_prediction.move_to([video_pred_final_x, video_pred_final_y, 0])
@@ -1046,9 +1057,9 @@ class InferenceRollout(Scene):
         loop_video_prediction = Rectangle(
             width=loop_video_pred_width,
             height=TRACK_HEIGHT,
-            fill_color=VISION_COLOR,
+            fill_color=VIDEO_PRED_FILL_COLOR,
             fill_opacity=0.25,
-            stroke_color=VISION_COLOR,
+            stroke_color=VIDEO_PRED_COLOR,
             stroke_width=2
         )
         loop_video_prediction.move_to(phase1_video_pred_pos)
@@ -1368,9 +1379,9 @@ class InferenceRollout(Scene):
             video_pred_ghost_out = Rectangle(
                 width=VIDEO_MODEL_WIDTH * 0.8,
                 height=TRACK_HEIGHT,
-                fill_color=VISION_COLOR,
+                fill_color=VIDEO_PRED_FILL_COLOR,
                 fill_opacity=0.0,
-                stroke_color=VISION_COLOR,
+                stroke_color=VIDEO_PRED_COLOR,
                 stroke_width=2
             )
             video_pred_ghost_out.set_stroke(opacity=0)
@@ -1397,8 +1408,8 @@ class InferenceRollout(Scene):
                 new_width = start_width + (video_pred_width_loop - start_width) * ghost_progress
                 mob.stretch_to_fit_width(new_width)
                 
-                mob.set_fill(VISION_COLOR, opacity=0.25 * ghost_progress)
-                mob.set_stroke(VISION_COLOR, opacity=ghost_progress)
+                mob.set_fill(VIDEO_PRED_FILL_COLOR, opacity=0.25 * ghost_progress)
+                mob.set_stroke(VIDEO_PRED_COLOR, opacity=ghost_progress)
             
             video_pred_ghost_out.add_updater(video_pred_ghost_out_updater)
             
@@ -1424,9 +1435,9 @@ class InferenceRollout(Scene):
             new_video_prediction = Rectangle(
                 width=video_pred_width_loop,
                 height=TRACK_HEIGHT,
-                fill_color=VISION_COLOR,
+                fill_color=VIDEO_PRED_FILL_COLOR,
                 fill_opacity=0.25,
-                stroke_color=VISION_COLOR,
+                stroke_color=VIDEO_PRED_COLOR,
                 stroke_width=2
             )
             new_video_prediction.move_to([video_pred_x, VIDEO_PRED_Y, 0])
@@ -1446,9 +1457,9 @@ class InferenceRollout(Scene):
             pred_ghost_in = Rectangle(
                 width=video_pred_width_loop,
                 height=TRACK_HEIGHT,
-                fill_color=VISION_COLOR,
+                fill_color=VIDEO_PRED_FILL_COLOR,
                 fill_opacity=0.25,
-                stroke_color=VISION_COLOR,
+                stroke_color=VIDEO_PRED_COLOR,
                 stroke_width=2
             )
             pred_ghost_in.move_to(loop_video_prediction.get_center())

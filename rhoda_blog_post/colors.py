@@ -77,6 +77,22 @@ PREDICTION_COLOR = RHODA_PEACH     # Predictions (semi-transparent fill)
 TIMEBAR_COLOR = TEXT_DARK          # Timebar indicator
 
 # =============================================================================
+# OVERVIEW DIAGRAM COLORS
+# =============================================================================
+
+# Video context (blue)
+VIDEO_CONTEXT_STROKE = "#80b3ff"
+VIDEO_CONTEXT_FILL = "#b3d1ff"     # Lighter blue fill
+
+# Video prediction (purple)
+VIDEO_PREDICTION_STROKE = "#b380ff"
+VIDEO_PREDICTION_FILL = "#d1b3ff"  # Lighter purple fill
+
+# Action prediction (yellow)
+ACTION_PREDICTION_STROKE = "#ffcc55"
+ACTION_PREDICTION_FILL = "#ffdd88"  # Lighter yellow fill
+
+# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
